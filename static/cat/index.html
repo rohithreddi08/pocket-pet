@@ -1,0 +1,107 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pocket Pet — 3D</title>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:#0d1117;
+               font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #c { display:block; width:100vw; height:100vh; }
+  #hud {
+    position:absolute; top:14px; left:14px;
+    background:rgba(255,255,255,0.82); backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border:1px solid rgba(255,255,255,0.5);
+    border-radius:14px; padding:12px 16px; font-size:13px; color:#1f1f1f;
+    box-shadow:0 8px 32px rgba(0,0,0,0.18); pointer-events:none; min-width:180px;
+  }
+  #hud .name { font-weight:700; font-size:15px; }
+  #hud .status { color:#4a7a2a; font-size:12px; font-style:italic; margin-top:3px; }
+  #hint { position:absolute; bottom:12px; left:50%; transform:translateX(-50%);
+          background:rgba(0,0,0,0.42); color:#fff; font-size:11px;
+          padding:6px 14px; border-radius:22px; pointer-events:none;
+          backdrop-filter: blur(8px); }
+  #err {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:#2a1a1a; color:#ffb4b4; padding:16px 22px; border-radius:12px;
+    font-size:13px; max-width:80%; display:none; text-align:center;
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/build/three.module.js",
+    "three/addons/": "../vendor/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="name" id="petName">Mochi</div>
+  <div class="status" id="petStatus">loading…</div>
+</div>
+<div id="hint">Mochi wanders, sniffs, and chases · drag to orbit · click to pet</div>
+<div id="err"></div>
+
+<script type="module">
+  import { initCat } from './main.js';
+
+  const params = new URLSearchParams(location.search);
+  const state = JSON.parse(params.get('state') || '{}');
+
+  document.getElementById('petName').textContent   = state.name || 'Mochi';
+  document.getElementById('petStatus').textContent = state.trigger
+    ? `reacting: ${state.trigger}` : 'idle';
+
+  // Model selection: ?model=… override, else the rigged cat if it's been added,
+  // else the legacy unrigged mesh.
+  const MODEL_CANDIDATES = [
+    params.get('model'),
+    './assets/cat_rigged.glb',
+    './assets/cat.glb',
+  ].filter(Boolean);
+
+  async function firstExisting(urls) {
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { method: 'HEAD' });
+        if (res.ok) return url;
+      } catch { /* try next */ }
+    }
+    return urls[urls.length - 1];
+  }
+
+  // Per-model tweaks. Everything is auto-detected; only fill these in if the
+  // console log from [ClipRig] shows a pose mapped to the wrong clip.
+  const LOADER_OPTIONS = {
+    // forward: '+z',                     // nose direction if auto-detect is wrong
+    // clipMap: { sit: 'Cat_SitIdle', rest: 'Cat_Sleep' },
+    // clipSpeeds: { walk: 0.8, run: 2.2 },  // ground speed of in-place clips
+  };
+
+  try {
+    await initCat(document.getElementById('c'), {
+      modelUrl: await firstExisting(MODEL_CANDIDATES),
+      hdriUrl:  './assets/studio.hdr',
+      loader:   LOADER_OPTIONS,
+      trigger: state.trigger || null,
+      needs: {
+        hunger: state.hunger ?? 30,
+        energy: state.energy ?? 80,
+        curiosity: state.curiosity ?? 40,
+        stress: state.stress ?? 20,
+      },
+      onStatus: (txt) => document.getElementById('petStatus').textContent = txt,
+    });
+  } catch (e) {
+    console.error(e);
+    const err = document.getElementById('err');
+    err.style.display = 'block';
+    err.textContent = `Failed to load 3D scene: ${e.message}`;
+  }
+</script>
+</body>
+</html>

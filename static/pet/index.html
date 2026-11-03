@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#2b2340">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="description" content="Pocket Pet — a cozy 3D cat that lives in your browser. Talk, feed, wash, play.">
+<title>Pocket Pet</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./styles.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/build/three.module.js",
+    "three/addons/": "../vendor/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="loading">
+  <div class="paw">🐾</div>
+  <div id="loadingText">Getting things ready…</div>
+  <div class="bar"><i id="loadBar"></i></div>
+</div>
+
+<header id="hud">
+  <div class="profile">
+    <div class="level" title="Level">
+      <svg viewBox="0 0 48 48"><circle class="bg" cx="24" cy="24" r="20"/><circle id="levelRing" class="fg" cx="24" cy="24" r="20" stroke-dasharray="125.66" stroke-dashoffset="125.66"/></svg>
+      <span id="levelNum">1</span>
+    </div>
+    <div class="who"><div id="petName">…</div><div id="mood"></div></div>
+  </div>
+  <div class="needs" id="needs"></div>
+  <div class="coins" id="coins">🪙 <span>0</span></div>
+</header>
+
+<div id="roomTitle"></div>
+
+<button class="nav left" id="navL" aria-label="Previous room">‹</button>
+<button class="nav right" id="navR" aria-label="Next room">›</button>
+
+<aside class="side left">
+  <button id="btnShop" title="Shop" aria-label="Shop">🛒</button>
+  <button id="btnGames" title="Mini-games" aria-label="Mini-games">🎮</button>
+</aside>
+<aside class="side right">
+  <button id="btnTalk" class="talk" title="Talk to your cat" aria-label="Talk" data-state="off">🎙️<small id="talkLabel"></small></button>
+  <button id="btnWardrobe" title="Wardrobe" aria-label="Wardrobe">👒</button>
+  <button id="btnDaily" title="Daily treat" aria-label="Daily treat">🎁</button>
+  <button id="btnSettings" title="Settings" aria-label="Settings">⚙️</button>
+</aside>
+
+<nav id="dock"></nav>
+<div id="toolHint"></div>
+<div id="thought" class="thought hidden"></div>
+<div id="toasts"></div>
+
+<div id="tray" class="tray hidden"></div>
+
+<div id="focusBar" hidden>
+  <span>📚 Focusing</span><b>00:00</b><button>End</button>
+</div>
+
+<div id="sheet" class="sheet hidden" role="dialog" aria-modal="true">
+  <div class="sheet-card">
+    <header><h2 id="sheetTitle"></h2><button id="sheetClose" aria-label="Close">✕</button></header>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

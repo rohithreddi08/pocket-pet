@@ -111,6 +111,8 @@ export class House {
     scene.add(this.group);
     this.rooms = ROOMS.map((r, i) => ({ ...r, index: i, cx: i * ROOM_W, spots: {}, lightsOn: true }));
     this.interactables = [];      // {object, id, room}
+    this.perches = [];            // high places the cat jumps onto
+    this.windows = [];            // windows the cat likes to watch birds from
     this.floors = [];             // for laser-pointer raycasts
     this.wallMats = [];           // per room, for themes
     this.skies = [];
@@ -233,7 +235,7 @@ export class House {
     tree.add(mesh(rbox(0.9, 0.1, 0.9, 0.04), carpet, { y: 0.05 }));
     tree.add(mesh(cyl(0.09, 0.09, 1.6, 16), sisal, { y: 0.85 }));
     tree.add(mesh(rbox(0.7, 0.08, 0.7, 0.04), carpet, { y: 0.9 }));
-    tree.add(mesh(rbox(0.8, 0.08, 0.8, 0.04), carpet, { y: 1.65 }));
+    tree.add(mesh(rbox(1.15, 0.1, 1.0, 0.05), carpet, { y: 1.64 }));   // top perch, big enough to sit on
     const toy = mesh(new THREE.SphereGeometry(0.07, 12, 8), mat('#e07a5f', { rough: 0.8 }), { x: 0.3, y: 1.32 });
     tree.add(toy);
     tree.add(mesh(cyl(0.005, 0.005, 0.3, 4), mat('#333'), { x: 0.3, y: 1.49, cast: false }));
@@ -257,7 +259,13 @@ export class House {
     this.ball = { mesh: ball, vel: new THREE.Vector3(), room: 0, r: 0.2 };
     this._interactive(ball, 'ball', 0);
 
-    room.spots = { window: new THREE.Vector3(cx + 1.5, 0, -1.0), tree: new THREE.Vector3(cx - 2.2, 0, 0.1), sofa: new THREE.Vector3(cx - 1.2, 0, -1.0) };
+    room.spots = { window: new THREE.Vector3(cx + 1.5, 0, -1.0), tree: new THREE.Vector3(cx - 2.0, 0, 0.1), sofa: new THREE.Vector3(cx - 1.2, 0, -1.0) };
+    // High places a cat jumps onto (ground = take-off point, top = where it sits).
+    this.perches.push(
+      { room: 0, name: 'the cat tree', ground: new THREE.Vector3(cx - 2.0, 0, 0.1), top: new THREE.Vector3(cx - 3.1, 1.69, -0.3), nap: true },
+      { room: 0, name: 'the sofa', ground: new THREE.Vector3(cx - 1.6, 0, -1.2), top: new THREE.Vector3(cx - 1.6, 0.72, -2.3), nap: true },
+    );
+    this.windows.push({ room: 0, spot: new THREE.Vector3(cx + 1.5, 0, -1.0), glass: new THREE.Vector3(cx + 1.5, 2.0, -2.9) });
   }
 
   _buildKitchen(room) {
@@ -311,10 +319,24 @@ export class House {
     g.add(fridge);
     this._interactive(fridge, 'fridge', room.index);
 
-    // Pet bowl + mat
-    g.add(mesh(rbox(0.9, 0.02, 0.55, 0.01), mat('#e07a5f', { rough: 0.9 }), { x: 1.0, y: 0.01, z: -1.35, cast: false }));
-    const bowl = new THREE.Mesh(new THREE.LatheGeometry([new THREE.Vector2(0.0, 0), new THREE.Vector2(0.17, 0), new THREE.Vector2(0.2, 0.1), new THREE.Vector2(0.17, 0.11), new THREE.Vector2(0.15, 0.03), new THREE.Vector2(0, 0.03)], 24), mat('#3d8bd1', { rough: 0.3 }));
-    bowl.position.set(1.0, 0.02, -1.35); bowl.castShadow = true; g.add(bowl);
+    // Food + water bowls on a mat. Their contents show how full they are.
+    g.add(mesh(rbox(1.25, 0.02, 0.6, 0.01), mat('#e07a5f', { rough: 0.9 }), { x: 1.0, y: 0.01, z: -1.35, cast: false }));
+    const bowlGeo = new THREE.LatheGeometry([new THREE.Vector2(0.0, 0), new THREE.Vector2(0.17, 0), new THREE.Vector2(0.21, 0.11), new THREE.Vector2(0.18, 0.12), new THREE.Vector2(0.15, 0.03), new THREE.Vector2(0, 0.03)], 24);
+    const makeBowl = (x, color, fillMat) => {
+      const b = new THREE.Mesh(bowlGeo, mat(color, { rough: 0.3 }));
+      b.position.set(x, 0.02, -1.35); b.castShadow = true; g.add(b);
+      const fill = new THREE.Mesh(cyl(0.165, 0.15, 0.08, 24), fillMat);
+      fill.position.set(cx + x, 0.06, -1.35);
+      this.group.add(fill);
+      return fill;
+    };
+    this.bowls = {
+      food: makeBowl(0.7, '#3d8bd1', mat('#9c6b3f', { rough: 0.9 })),
+      water: makeBowl(1.32, '#e9ecef', new THREE.MeshStandardMaterial({ color: '#7cc6f2', roughness: 0.05, transparent: true, opacity: 0.85 })),
+      kibble: mat('#b5835a', { rough: 1 }),
+      wet: mat('#8a4b2f', { rough: 0.6 }),
+    };
+    this.setBowls(0, 70, null);
     // Table + chair (front-left)
     const wood = mat('#b98b67', { rough: 0.6 });
     g.add(mesh(cyl(0.55, 0.55, 0.05, 32), wood, { x: -2.6, y: 0.78, z: 0.3 }));
@@ -323,7 +345,12 @@ export class House {
     g.add(mesh(new THREE.SphereGeometry(0.1, 12, 8), mat('#e63946', { rough: 0.4 }), { x: -2.45, y: 0.88, z: 0.25 }));
     g.add(mesh(new THREE.SphereGeometry(0.09, 12, 8), mat('#ffd166', { rough: 0.4 }), { x: -2.7, y: 0.87, z: 0.4 }));
 
-    room.spots = { bowl: new THREE.Vector3(cx + 1.0, 0, -0.7), fridge: new THREE.Vector3(cx + 1.6, 0, -1.2) };
+    room.spots = { bowl: new THREE.Vector3(cx + 1.0, 0, -0.5), fridge: new THREE.Vector3(cx + 1.6, 0, -1.0) };
+    // Where the cat stands to eat/drink, and what it faces.
+    this.feeding = {
+      food: { stand: new THREE.Vector3(cx + 0.7, 0, -0.62), at: new THREE.Vector3(cx + 0.7, 0, -1.35) },
+      water: { stand: new THREE.Vector3(cx + 1.32, 0, -0.62), at: new THREE.Vector3(cx + 1.32, 0, -1.35) },
+    };
   }
 
   _buildBathroom(room) {
@@ -364,9 +391,28 @@ export class House {
     const sink = new THREE.Group();
     sink.add(mesh(cyl(0.12, 0.16, 0.8, 16), white, { y: 0.4 }));
     sink.add(mesh(rbox(0.8, 0.18, 0.55, 0.08), white, { y: 0.88 }));
-    sink.add(mesh(cyl(0.02, 0.02, 0.18, 8), chrome, { y: 1.05, z: -0.2 }));
+    sink.add(mesh(cyl(0.02, 0.02, 0.22, 8), chrome, { y: 1.07, z: -0.2 }));
+    sink.add(mesh(cyl(0.018, 0.018, 0.16, 8), chrome, { y: 1.17, z: -0.13, rx: Math.PI / 2 }));   // spout
     sink.position.set(2.0, 0, -2.65);
     g.add(sink);
+    this._interactive(sink, 'tap', room.index);
+    this.tap = { on: false, origin: new THREE.Vector3(cx + 2.0, 1.14, -2.6), timer: 0, watch: new THREE.Vector3(cx + 2.0, 0, -1.75) };
+
+    // Litter box (back-center). Clumps appear as it gets used.
+    const litter = new THREE.Group();
+    litter.add(mesh(rbox(1.3, 0.26, 0.85, 0.06), mat('#81b29a', { rough: 0.6 }), { y: 0.13 }));
+    litter.add(mesh(box(1.18, 0.02, 0.73), mat('#e9dcc3', { rough: 1 }), { y: 0.22, cast: false }));
+    const clumps = [];
+    const clumpMat = mat('#a08566', { rough: 1 });
+    for (let i = 0; i < 6; i += 1) {
+      const c = mesh(new THREE.SphereGeometry(0.05 + (i % 3) * 0.01, 8, 6), clumpMat, { x: -0.4 + (i * 0.17) % 0.85, y: 0.235, z: -0.2 + ((i * 7) % 5) * 0.09, cast: false });
+      c.scale.y = 0.6; c.visible = false;
+      litter.add(c); clumps.push(c);
+    }
+    litter.position.set(0.25, 0, -2.4);
+    g.add(litter);
+    this._interactive(litter, 'litter', room.index);
+    this.litterBox = { clumps, inside: new THREE.Vector3(cx + 0.25, 0.08, -2.4), front: new THREE.Vector3(cx + 0.25, 0, -1.25) };
     const mirror = new THREE.Group();
     mirror.add(mesh(rbox(0.95, 1.15, 0.05, 0.05), mat('#9ccfd8', { rough: 0.4 }), { cast: false }));
     // A believable mirror without a real reflection: pale glass with a sheen streak.
@@ -383,7 +429,7 @@ export class House {
     g.add(mesh(rbox(1.8, 0.03, 1.1, 0.012), mat('#ffffff', { map: T.stripes(['#9ccfd8', '#f1fbfd'], 8, true), rough: 1 }), { y: 0.015, z: 0.35, cast: false }));
     const p = plant(0.85, '#9ccfd8'); p.position.set(3.35, 0, 1.7); g.add(p);   // front corner: keeps the doorway clear
 
-    room.spots = { tub: new THREE.Vector3(cx - 1.4, 0, -1.2), mirror: new THREE.Vector3(cx + 2.0, 0, -1.6) };
+    room.spots = { tub: new THREE.Vector3(cx - 1.4, 0, -1.0), mirror: new THREE.Vector3(cx + 2.0, 0, -1.6) };
   }
 
   _buildBedroom(room) {
@@ -472,6 +518,8 @@ export class House {
     g.add(mouse);
 
     room.spots = { bed: new THREE.Vector3(cx - 1.6, 0, -1.7), window: new THREE.Vector3(cx + 1.0, 0, -1.2) };
+    this.windows.push({ room: 3, spot: new THREE.Vector3(cx + 1.0, 0, -1.2), glass: new THREE.Vector3(cx + 1.0, 2.05, -2.9) });
+    this.beds = [{ room: 3, spot: new THREE.Vector3(cx - 1.6, 0, -1.7), name: 'its bed' }];
   }
 
   // ------------------------------------------------------------------ lighting
@@ -557,7 +605,7 @@ export class House {
 
     // Ball physics (living room floor)
     const b = this.ball;
-    if (b.vel.lengthSq() > 1e-5) {
+    if (!b.held && b.vel.lengthSq() > 1e-5) {        // held = in the cat's mouth
       const r0 = this.rooms[b.room];
       const bx0 = r0.cx - ROOM_W / 2 + b.r + 0.1; const bx1 = r0.cx + ROOM_W / 2 - b.r - 0.1;
       const bz0 = -1.8; const bz1 = 2.2;
@@ -575,6 +623,36 @@ export class House {
       }
       b.vel.multiplyScalar(Math.exp(-0.9 * dt));
       if (speed < 0.05) b.vel.set(0, 0, 0);
+    }
+  }
+
+  /** Show bowl contents: food 0–100 (type: wet|kibble), water 0–100. */
+  setBowls(food, water, type) {
+    const f = this.bowls.food; const w = this.bowls.water;
+    f.visible = food > 1;
+    f.scale.set(0.75 + 0.25 * (food / 100), Math.max(0.05, food / 100), 0.75 + 0.25 * (food / 100));
+    f.position.y = 0.035 + 0.04 * (food / 100);
+    f.material = type === 'wet' ? this.bowls.wet : this.bowls.kibble;
+    w.visible = water > 1;
+    w.scale.set(0.8 + 0.2 * (water / 100), Math.max(0.05, water / 100), 0.8 + 0.2 * (water / 100));
+    w.position.y = 0.035 + 0.04 * (water / 100);
+  }
+
+  /** dirt 0–100 → visible clumps in the litter box. */
+  setLitter(dirt) {
+    const n = Math.round((dirt / 100) * this.litterBox.clumps.length);
+    this.litterBox.clumps.forEach((c, i) => { c.visible = i < n; });
+  }
+
+  toggleTap(on = !this.tap.on) { this.tap.on = on; return on; }
+
+  /** Drips from the bathroom tap (call from the frame loop with the particle system). */
+  updateTap(dt, fx) {
+    if (!this.tap.on) return;
+    this.tap.timer -= dt;
+    if (this.tap.timer <= 0) {
+      this.tap.timer = 0.35;
+      fx.spawn('drop', this.tap.origin, { vel: new THREE.Vector3(0, -0.5, 0), life: 0.35 });
     }
   }
 

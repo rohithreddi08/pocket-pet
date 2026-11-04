@@ -18,6 +18,9 @@ const PRESETS = {
   splash: { tex: () => blob('rgba(140,200,255,0.9)', 'rgba(140,200,255,0)'), size: 0.07, life: 0.7, vel: [0, 1.0, 0], spread: 1.8, gravity: -6, fade: true },
   fly:    { tex: () => glyph('🪰', 64), size: 0.12, life: 3.0, vel: [0, 0, 0], spread: 0.0, gravity: 0, fade: true, buzz: true },
   coin:   { tex: () => glyph('🪙'), size: 0.3, life: 1.0, vel: [0, 1.4, 0], spread: 0.6, gravity: -3, fade: true },
+  fur:    { tex: () => blob('rgba(214,120,62,0.9)', 'rgba(214,120,62,0)'), size: 0.09, life: 1.6, vel: [0, 0.25, 0], spread: 0.5, gravity: -0.35, fade: true },
+  bird:   { tex: () => glyph('🐦'), size: 0.3, life: 3.2, vel: [1.1, 0.15, 0], spread: 0.1, gravity: 0, fade: true },
+  catnip: { tex: () => glyph('🌿'), size: 0.25, life: 1.5, vel: [0, 0.7, 0], spread: 0.9, gravity: -0.5, fade: true },
 };
 
 export class Particles {

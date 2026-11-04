@@ -1,5 +1,7 @@
 // ============================================================================
 // main.js — boots the app and wires world, cat, input and UI together.
+// You and the cat each have a room: the camera shows yours, the cat lives its
+// own life around the house (and usually follows you).
 // ============================================================================
 import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
@@ -8,11 +10,11 @@ import { mapBones, normalizeName } from '../../cat/BoneMap.js';
 import { PoseLayer } from '../../cat/PoseLayer.js';
 import { HeadTracker } from '../../cat/HeadTracker.js';
 import { Procedural } from '../../cat/Procedural.js';
-import { House, ROOMS, ROOM_W } from './world/House.js';
+import { House, ROOMS } from './world/House.js';
 import { Particles } from './world/Particles.js';
 import { Pet } from './pet/Pet.js';
 import { Accessories } from './pet/Accessories.js';
-import { Game, THEMES } from './state.js';
+import { Game, FOODS, THEMES } from './state.js';
 import { Sound, Voice, audioContext } from './audio.js';
 import { UI } from './ui/ui.js';
 import { $ } from './ui/dom.js';
@@ -77,16 +79,19 @@ async function boot() {
   const procedural = new Procedural({
     root, layer, chestBone: bones.chest, hipBone: bones.hip, earLBone: bones.earL, earRBone: bones.earR, tailBones: bones.tail,
   });
-  const hats = new Accessories(root, bones.head);       // measure in rest pose, before animating
+  const hats = new Accessories(root, bones.head);
   hats.wear(game.s.hat);
-  game.on('hat', (id) => hats.wear(id));
   const applyTheme = (id) => house.applyTheme((THEMES[id] || THEMES.cream).walls);
   applyTheme(game.s.theme);
   game.on('theme', applyTheme);
 
   const pet = new Pet({ root, rig, bones, layer, tracker, procedural, house, fx, sound, voice, game, camera });
-  let room = pet.room;
+  game.on('hat', (id) => { hats.wear(id); if (id) setTimeout(() => pet.react('headshake'), 300); });
+  let room = game.s.room || 0;
   house.focusRoom(room);
+  const syncBowls = () => house.setBowls(game.s.bowl.food, game.s.bowl.water, game.s.bowl.foodType);
+  syncBowls(); game.on('bowl', syncBowls);
+  house.setLitter(game.s.litter); game.on('litter', () => house.setLitter(game.s.litter));
 
   // Which part of the cat did we touch? (dominant bone of the hit triangle)
   const catMeshes = [];
@@ -105,15 +110,17 @@ async function boot() {
     if (/\b(head|ear|eye|neck|jaw|whisker|nose)/.test(n)) return 'head';
     if (/\btail/.test(n)) return 'tail';
     if (/\b(thigh|heel|arm|paw|foot|leg|toe|hand|shin|calf)/.test(n) || /\bhip\b.*\b(l|r)\b/.test(n)) return 'leg';
+    // Underside of the torso = belly.
+    const nrm = hit.face.normal.clone().transformDirection(o.matrixWorld);
     const chestY = (bones.chest || bones.hip || root).getWorldPosition(new THREE.Vector3()).y;
-    return hit.point.y < chestY * 0.85 ? 'belly' : 'body';
+    return nrm.y < -0.35 || hit.point.y < chestY * 0.8 ? 'belly' : 'body';
   }
 
   // -------------------------------------------------------------- UI + actions
-  let focus = null;              // { endsAt, minutes }
-  let laser = null;              // { dot, point }
+  let focus = null;
   let showering = false;
   let ballPlay = 0;
+  let laserOn = false;
 
   const laserDot = new THREE.Mesh(new THREE.CircleGeometry(0.06, 20), new THREE.MeshBasicMaterial({ color: '#ff1744', toneMapped: false }));
   laserDot.rotation.x = -Math.PI / 2; laserDot.visible = false; scene.add(laserDot);
@@ -125,73 +132,137 @@ async function boot() {
   showerHead.visible = false; scene.add(showerHead);
 
   function goRoom(i) {
-    if (i < 0 || i >= ROOMS.length || pet.travelling) return;
-    if (focus) { ui.toast('Shh… focus session in progress 🤫'); return; }
+    if (i < 0 || i >= ROOMS.length || i === room) return;
     stopPlay();
     ui.closeTray();
     room = i;
+    game.setRoom(i);
     ui.setRoom(i);
     house.focusRoom(i);
-    pet.goToRoom(i);
+    pet.setViewRoom(i);
   }
 
   function stopPlay() {
-    pet.stopChase();
+    if (pet.act?.id === 'play') pet.stopChase();
     ballPlay = 0;
-    laser = null; laserDot.visible = false;
+    laserOn = false; laserDot.visible = false;
   }
+
+  /** Bring the cat to the room you're in (if it's willing), then do something. */
+  function summon(then, speed = 1.3) {
+    if (pet.room === room && !pet.travelling) { then(); return; }
+    pet.interrupt(true);
+    pet.goToRoom(room, then, speed);
+  }
+
+  const hintSeen = new Map();
+  pet.onHint = (msg) => {
+    const last = hintSeen.get(msg) || 0;
+    if (Date.now() - last < 90000) return;
+    hintSeen.set(msg, Date.now());
+    ui.hint(msg);
+  };
 
   const actions = {
     go: (d) => goRoom(room + d),
+    goto: (i) => goRoom(i),
     celebrate: () => pet.celebrate(),
-    feed: (id) => {
-      if (pet.travelling) return;
-      if (game.needs.food > 96) { pet.refuse(); ui.toast(`${game.s.name} is full! 😸`); return; }
-      const f = game.useFood(id);
-      if (!f) return;
-      pet.feed(f);
-      flyFood(f.icon);          // the food arcs from the tray to the cat's mouth
-      if (f.like !== 'dislike') game.addCoins(1, 'care');
+    fillBowl: (id) => {
+      if (game.s.bowl.food > 70) { ui.toast('The bowl is still full'); return; }
+      if (game.fillBowl(id)) {
+        sound.pop();
+        ui.toast(`${FOODS[id].icon} Bowl filled — ${game.s.name} will eat when hungry`);
+        game.addXp(2);
+      }
+    },
+    refillWater: () => { game.refillWater(); sound.pop(); ui.toast('💧 Fresh water'); game.addXp(1); },
+    treat: (id) => {
+      const f = FOODS[id];
+      if (f.kind === 'treat' && game.treatsLeftToday() <= 0) {
+        ui.toast('That\'s enough treats for today — treats should stay a small part of a cat\'s diet.');
+        if (pet.inView) pet.refuse();
+        return;
+      }
+      ui.closeTray();
+      const ok = pet.comeForTreat(() => {
+        const got = game.useTreat(id);
+        if (!got || got.refused) return;
+        flyFood(f.icon);
+        if (f.kind === 'catnip') {
+          setTimeout(() => {
+            const reacted = pet.catnip();
+            if (!reacted) ui.hint('No reaction — about 1 in 3 cats aren\'t affected by catnip. It\'s genetic!');
+          }, 600);
+        } else {
+          setTimeout(() => pet.eatTreat(f), 500);
+        }
+      });
+      if (!ok) ui.toast(`${game.s.name} is fast asleep 😴`);
+      else if (pet.room !== room) ui.toast(`🔔 ${game.s.name} heard the treat bag…`);
     },
     throwBall: () => {
       if (room !== 0) return;
       stopPlay();
       const b = house.ball;
-      const away = b.mesh.position.clone().sub(root.position).setY(0);
-      if (away.lengthSq() < 0.01) away.set(1, 0, 0);
-      away.applyAxisAngle(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 1.6);
+      b.held = false;
+      const away = new THREE.Vector3((Math.random() - 0.5) * 2, 0, -1);
       house.kickBall(away, 2.8);
       sound.boing();
-      ballPlay = 14;
-      pet.startChase(() => b.mesh.position, () => {
-        const dir = b.mesh.position.clone().sub(root.position).setY(0);
-        dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 1.2);
-        house.kickBall(dir, 2.2 + Math.random() * 1.2);
-        pet.pounce();
-        game.addNeed('fun', 4); game.addNeed('energy', -1.5); game.addXp(1);
-      }, 0.75, 1.5);
+      ballPlay = 18;
+      if (pet.sleeping && game.bond < 30) { ui.toast(`${game.s.name} opens one eye… and goes back to sleep.`); return; }
+      summon(() => {
+        pet.startChase(() => (b.held ? null : b.mesh.position), () => {
+          game.addNeed('play', 5); game.addNeed('energy', -1.5); game.addXp(1);
+          // Somalis love to fetch.
+          if (game.bond > 40 && Math.random() < 0.45) {
+            b.held = true; b.vel.set(0, 0, 0);
+            pet.fetch(b.mesh, () => {
+              b.held = false;
+              b.mesh.position.y = 0.2;
+              house.kickBall(camera.position.clone().sub(b.mesh.position).setY(0), 0.8);
+              ui.toast(`${game.s.name} brought the ball back! Tap it to throw again.`);
+              game.addBond(0.5);
+            });
+            ballPlay = 0;
+          } else {
+            const dir = b.mesh.position.clone().sub(root.position).setY(0);
+            dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 1.2);
+            house.kickBall(dir, 2.2 + Math.random() * 1.2);
+          }
+        }, 0.75, 1.5);
+      });
     },
     toggleLights: () => {
       const r = house.rooms[room];
       house.setLights(room, !r.lightsOn);
       sound.click();
-      if (!r.lightsOn && room === 3 && game.needs.energy < 92) pet.sleep();
-      if (r.lightsOn && pet.sleeping && !focus) pet.wake();
+      pet.lightsChanged(room, r.lightsOn);
     },
-    sleep: () => {
-      if (game.needs.energy > 92) { ui.toast(`${game.s.name} isn't sleepy`); pet.refuse(); return; }
-      if (room !== 3) goRoom(3);
-      house.setLights(3, false);
-      pet.sleep();
+    scoop: () => {
+      if (game.scoop()) { sound.squish(); ui.toast('🧹 Litter box scooped — do this daily'); }
+      else ui.toast('The litter box is already clean ✨');
+    },
+    toggleTap: () => {
+      const on = house.toggleTap();
+      sound.click();
+      if (on && pet.room === 2 && !pet.sleeping) pet.interrupt();
+      ui.toast(on ? '🚰 Tap dripping — Somalis are famously fascinated by water' : 'Tap off');
+    },
+    slowBlink: () => {
+      if (pet.slowBlink() === 'away') ui.toast(pet.sleeping ? `${game.s.name} is asleep` : `${game.s.name} isn't in this room`);
+      else ui.toast('😌 You slowly blink…');
     },
     toggleTalk: async () => {
       audioContext();
-      if (voice.state !== 'off') { voice.disable(); ui.toast('Talking off'); return; }
+      if (voice.state !== 'off') { voice.disable(); ui.toast('Microphone off'); return; }
       try {
         voice.pitch = game.s.settings.voicePitch;
         voice.sensitivity = game.s.settings.micSensitivity;
+        voice.parrot = game.s.settings.parrot;
         await voice.enable();
-        ui.toast(`🎙️ Say something — ${game.s.name} will repeat it!`, 'big');
+        ui.toast(voice.parrot
+          ? `🎙️ Say something — ${game.s.name} will repeat it!`
+          : `🎙️ Talk to ${game.s.name} — cats recognise their person's voice`, 'big');
       } catch (e) {
         const inFrame = window.self !== window.top;
         ui.toast(inFrame
@@ -201,15 +272,15 @@ async function boot() {
       }
     },
     startFocus: (minutes) => {
-      if (room !== 3) goRoom(3);
-      house.setLights(3, false);
-      pet.sleep();
       focus = { endsAt: Date.now() + minutes * 60000, minutes };
       ui.showFocus(focus.endsAt, () => endFocus(false));
-      ui.toast(`Focus for ${minutes} min — you've got this! 📚`, 'big');
+      // A cat keeps you company by napping nearby.
+      pet.interrupt(true);
+      pet._startNap(room);
+      ui.toast(`Focus for ${minutes} min — ${game.s.name} will nap nearby 📚`, 'big');
     },
     onTool: (name) => {
-      if (name !== 'laser') { laser = null; laserDot.visible = false; if (!ballPlay) pet.stopChase(); }
+      if (name !== 'laser') { laserOn = false; laserDot.visible = false; if (!ballPlay && pet.act?.id === 'play') pet.stopChase(); }
       if (name !== 'shower') stopShower();
     },
   };
@@ -219,14 +290,12 @@ async function boot() {
     const mins = completed ? focus.minutes : Math.floor((Date.now() - (focus.endsAt - focus.minutes * 60000)) / 60000);
     focus = null;
     ui.hideFocus();
-    house.setLights(3, true);
-    pet.wake();
     if (completed) {
       const coins = mins * 2;
-      game.addCoins(coins, 'focus'); game.addXp(mins); game.addNeed('fun', 15);
-      game.count('focusMin', mins);
+      game.addCoins(coins, 'focus'); game.addXp(mins); game.count('focusMin', mins);
       ui.toast(`🌟 Focus complete! +${coins} coins`, 'big');
-      pet.celebrate();
+      pet.wake(true);
+      setTimeout(() => pet.greet(), 800);
     } else {
       ui.toast('Focus session ended');
     }
@@ -241,7 +310,7 @@ async function boot() {
     pet.shakeOff();
   }
 
-  // Food flying in an arc from the tray to the mouth.
+  // Food arcing from your hand to the cat's mouth.
   const flying = [];
   function flyFood(icon) {
     const c = document.createElement('canvas'); c.width = c.height = 128;
@@ -250,24 +319,21 @@ async function boot() {
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
     s.scale.setScalar(0.35);
-    const from = camera.position.clone().add(new THREE.Vector3(0, -1.2, -1.5));
     scene.add(s);
-    flying.push({ s, from, t: 0 });
+    flying.push({ s, from: camera.position.clone().add(new THREE.Vector3(0, -1.2, -1.5)), t: 0 });
   }
 
   const ui = new UI({ game, sound, actions });
   ui.setRoom(room);
-  voice.onState = (st) => {
-    ui.setTalk(st);
-    if (st === 'hearing') { pet.wake(false); }
-    if (st === 'talking') { game.count('talked'); game.addNeed('fun', 2); }
-  };
+  voice.onState = (st) => ui.setTalk(st);
+  voice.onHeard = () => pet.heard();
   game.on('settings', () => {
     sound.enabled = game.s.settings.sound;
     voice.pitch = game.s.settings.voicePitch;
     voice.sensitivity = game.s.settings.micSensitivity;
+    voice.parrot = game.s.settings.parrot;
   });
-  game.on('reset', () => { hats.wear(null); applyTheme('cream'); pet.wake(false); });
+  game.on('reset', () => { hats.wear(null); applyTheme('cream'); pet.wake(false); syncBowls(); house.setLitter(game.s.litter); });
 
   // -------------------------------------------------------------- input
   const ray = new THREE.Raycaster();
@@ -288,13 +354,14 @@ async function boot() {
     canvas.setPointerCapture(e.pointerId);
     const catHit = cast(e, catMeshes);
     const itemHit = catHit ? null : cast(e, interactiveMeshes);
-    down = { x: e.clientX, y: e.clientY, t: performance.now(), catHit, itemHit, moved: 0, stroking: false, lastScrub: 0 };
+    down = { x: e.clientX, y: e.clientY, t: performance.now(), catHit, itemHit, moved: 0, stroking: false, last: performance.now() };
     if (ui.tool === 'laser') {
       const f = cast(e, house.floors);
       if (f) setLaser(f.point);
     } else if (ui.tool === 'shower') {
+      if (!pet.inView) { ui.toast(`${game.s.name} isn't here`); return; }
       showering = true; showerHead.visible = true; sound.shower(true);
-      pet.stop(); pet.sitting = false;
+      pet.interrupt(true); pet.stop(); pet.sitting = false;
     }
   });
 
@@ -303,26 +370,30 @@ async function boot() {
     tracker?.setPointer(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1));
     pet.pointerActive = e.pointerType === 'mouse' || !!down;
     if (!down) return;
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - down.last) / 1000);
+    down.last = now;
     down.moved = Math.max(down.moved, Math.hypot(e.clientX - down.x, e.clientY - down.y));
     if (ui.tool === 'laser') {
       const f = cast(e, house.floors);
       if (f) setLaser(f.point);
       return;
     }
+    const hit = (ui.tool || down.catHit) ? cast(e, catMeshes) : null;
     if (ui.tool === 'sponge') {
-      const now = performance.now();
-      if (now - down.lastScrub > 50) {
-        const hit = cast(e, catMeshes);
-        if (hit) {
-          down.lastScrub = now;
-          if (pet.scrub(hit.point)) game.addNeed('clean', 0.9);
-        }
+      if (hit && (down.lastScrub || 0) + 50 < now) {
+        down.lastScrub = now;
+        if (pet.scrub(hit.point)) game.addNeed('groom', 0.7);
       }
       return;
     }
-    if (down.catHit && down.moved > 14) {
-      const hit = cast(e, catMeshes);
-      if (hit) { down.stroking = true; pet.stroke(1 / 30); }
+    if (ui.tool === 'brush') {
+      if (hit) { pet.brush(hit.point, dt, regionOf(hit)); game.count('brushed', 0); }
+      return;
+    }
+    if (down.catHit && down.moved > 14 && hit) {
+      down.stroking = true;
+      pet.stroke(regionOf(hit), dt);
     }
   });
 
@@ -331,6 +402,7 @@ async function boot() {
     const d = down; down = null;
     pet.pointerActive = e.pointerType === 'mouse';
     if (ui.tool === 'shower') { stopShower(); return; }
+    if (ui.tool === 'brush' && d.moved > 14) { game.count('brushed'); return; }
     if (ui.tool) return;
     const dx = e.clientX - d.x; const dy = e.clientY - d.y;
     const quick = performance.now() - d.t < 450;
@@ -341,7 +413,7 @@ async function boot() {
     if (d.moved > 12 || d.stroking) return;
     if (d.catHit) {
       const res = pet.touch(regionOf(d.catHit));
-      if (res === 'angry') ui.toast(`${game.s.name} has had enough poking! 😾`);
+      if (res === 'shy') ui.hint(`${game.s.name} is still shy. Build trust with slow blinks 😌, meals and gentle head scratches.`);
     } else if (d.itemHit) {
       onItem(d.itemHit.object.userData.interactive);
     }
@@ -352,9 +424,11 @@ async function boot() {
 
   function onItem(id) {
     if (id === 'ball') actions.throwBall();
-    else if (id === 'fridge') ui.openTray();
+    else if (id === 'fridge') ui.openTray('meal');
     else if (id === 'lamp') actions.toggleLights();
-    else if (id === 'bed') actions.sleep();
+    else if (id === 'litter') actions.scoop();
+    else if (id === 'tap') actions.toggleTap();
+    else if (id === 'bed') ui.toast('Cats nap when *they* decide to 😼');
     else if (id === 'duck') {
       sound.boing(); sound.pop();
       house.duck.userData.squeak = 0.5;
@@ -368,12 +442,12 @@ async function boot() {
     point.z = THREE.MathUtils.clamp(point.z, b.z0 - 0.3, b.z1);
     laserDot.position.set(point.x, 0.012, point.z);
     laserDot.visible = true;
-    if (!laser) {
-      laser = { point: laserDot.position };
-      pet.startChase(() => (laserDot.visible ? laserDot.position : null), () => {
-        pet.pounce();
-        game.addNeed('fun', 3); game.addNeed('energy', -1); game.addXp(1);
-      }, 0.6, 1.7);
+    if (!laserOn) {
+      laserOn = true;
+      if (pet.sleeping && game.bond < 30) return;
+      summon(() => pet.startChase(() => (laserDot.visible ? laserDot.position : null), () => {
+        game.addNeed('play', 3); game.addNeed('energy', -1); game.addXp(1);
+      }, 0.6, 1.7));
     }
   }
 
@@ -383,8 +457,6 @@ async function boot() {
     const w = window.innerWidth; const h = window.innerHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    // Landscape: show ~6.6 units of the room at the cat's depth. Portrait
-    // (phones): frame tighter so the cat stays big, like a pet in your hand.
     const portrait = camera.aspect < 0.9;
     camDist = portrait ? 4.6 : 6.4;
     const halfWidth = portrait ? 1.7 : 3.3;
@@ -403,33 +475,34 @@ async function boot() {
   const clock = new THREE.Clock();
   let elapsed = 0;
   const headV = new THREE.Vector3();
-  let hintTimer = 0;
+  let uiTimer = 0;
 
   if (game.offlineHours > 0.5 && game.s.name) {
-    setTimeout(() => ui.toast(`${game.s.name} missed you! (away ${Math.round(game.offlineHours)}h)`, 'big'), 1200);
+    setTimeout(() => {
+      ui.toast(`${game.s.name} missed you! (away ${Math.round(game.offlineHours)}h)`, 'big');
+      pet.greet();
+    }, 1500);
   }
 
   function frame() {
-    const dt = Math.min(clock.getDelta(), 0.1);   // allow big steps so slow devices don't run in slow motion
+    const dt = Math.min(clock.getDelta(), 0.1);
     elapsed += dt;
 
-    game.tick(dt, { focus: !!focus });
+    game.tick(dt, { focus: !!focus, asleep: pet.sleeping });
     if (focus && Date.now() >= focus.endsAt) endFocus(true);
 
-    // Play sessions wind down by themselves.
     if (ballPlay > 0) {
       ballPlay -= dt;
-      if (ballPlay <= 0 || room !== 0) { ballPlay = 0; pet.stopChase(); }
+      if (ballPlay <= 0 || room !== 0) { ballPlay = 0; if (pet.act?.id === 'play') pet.stopChase(); }
     }
     if (showering) {
-      const removed = pet.rinse(dt);
+      if (pet.rinse(dt)) game.addNeed('groom', 1);
       showerHead.position.copy(pet.headPosition(headV)).add(new THREE.Vector3(0, 1.1, 0));
-      if (removed) { game.addNeed('clean', 1.2); }
       if (pet.foamCount === 0 && pet.wet >= 1) {
-        game.addNeed('clean', 10); game.count('washed'); game.addXp(3); game.addCoins(3, 'care');
+        game.addNeed('groom', 15); game.count('washed'); game.addXp(3);
         sound.sparkle();
         ui.setTool(null);
-        ui.toast(`${game.s.name} is squeaky clean! ✨`);
+        ui.toast(`${game.s.name} is clean — though most cats only need a bath rarely; brushing is what a Somali's coat really needs.`, 'big');
       }
     }
     if (house.duck.userData.squeak > 0) {
@@ -437,7 +510,6 @@ async function boot() {
       house.duck.scale.setScalar(1 + Math.sin(house.duck.userData.squeak * 30) * 0.12);
     }
 
-    // Flying food
     for (let i = flying.length - 1; i >= 0; i -= 1) {
       const f = flying[i]; f.t += dt / 0.6;
       const to = pet.headPosition(headV).clone().add(pet.noseDir().multiplyScalar(0.2));
@@ -452,28 +524,32 @@ async function boot() {
     layer.restore();
     pet.update(dt);
     house.update(dt, elapsed);
+    house.updateTap(dt, fx);
     fx.update(dt);
     laserDot.scale.setScalar(1 + Math.sin(elapsed * 20) * 0.15);
 
-    // Camera: follow the cat while it walks between rooms, else frame the room.
-    const target = pet.travelling ? THREE.MathUtils.clamp(root.position.x, 0, (ROOMS.length - 1) * ROOM_W) : house.rooms[room].cx;
-    camX += (target - camX) * Math.min(1, dt * (pet.travelling ? 3 : 2.5));
+    // Camera frames YOUR room.
+    camX += (house.rooms[room].cx - camX) * Math.min(1, dt * 3);
     parallax.lerp(tracker?.pointer || new THREE.Vector2(), Math.min(1, dt * 2));
     const portrait = camera.aspect < 0.9;
     camera.position.set(camX + parallax.x * 0.25, (portrait ? 1.55 : 1.75) + parallax.y * 0.1, camDist);
     camera.lookAt(camX, portrait ? 0.85 : 0.95, 0);
 
-    // Thought bubble over the head when a need is low.
-    hintTimer -= dt;
+    // Thought bubble over the head when a need is low and the cat is here.
     const mood = game.mood();
-    const lowIcon = { food: '🍗', energy: '😴', fun: '🎾', clean: '🛁' }[mood.low[0]];
-    if (lowIcon && !pet.sleeping && !pet.travelling && !pet.reactions.length) {
+    const lowIcon = { food: '🍗', water: '💧', energy: '😴', play: '🧶', groom: '🪮', litter: '🚽' }[mood.low[0]];
+    if (lowIcon && pet.inView && !pet.sleeping && !pet.reactions.length) {
       pet.headPosition(headV).add(new THREE.Vector3(0, 0.55, 0)).project(camera);
       ui.thought(lowIcon, (headV.x * 0.5 + 0.5) * window.innerWidth, (-headV.y * 0.5 + 0.5) * window.innerHeight);
     } else {
       ui.thought(null);
     }
-    if (hintTimer <= 0) { hintTimer = 0.5; ui.refresh(); }
+    uiTimer -= dt;
+    if (uiTimer <= 0) {
+      uiTimer = 0.4;
+      ui.refresh();
+      ui.status(pet, room);
+    }
 
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
@@ -486,16 +562,15 @@ async function boot() {
   if (!game.s.name) {
     ui.askName((name) => {
       audioContext();
-      sound.meow({ pitch: 1.1, mood: 'happy' });
-      pet.react('hop'); pet.react('love');
+      sound.chirp(2);
+      pet.greet();
       ui.toast(`Welcome home, ${name}! 🏡`, 'big');
+      setTimeout(() => ui.hint(`${name} is a Somali — curious, very active and a little independent. Open the 📖 guide to learn her body language.`), 3500);
     });
   }
 
   document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); });
   window.addEventListener('pagehide', () => game.save());
-
-  // handy for debugging in the console
   window.pocketPet = { game, pet, house, rig, voice, scene, camera };
 }
 

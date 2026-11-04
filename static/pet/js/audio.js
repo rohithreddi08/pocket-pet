@@ -59,7 +59,7 @@ export class Sound {
    * rising-then-falling pitch contour.
    * @param {{pitch?: number, dur?: number, mood?: 'happy'|'sad'|'question'|'angry'}} o
    */
-  meow({ pitch = 1, dur = 0.55, mood = 'happy' } = {}) {
+  meow({ pitch = 1, dur = 0.55, mood = 'happy', vol = 0.5 } = {}) {
     if (!this._ok()) return;
     const c = ctx; const t = c.currentTime;
     const f0 = 520 * pitch;
@@ -80,7 +80,7 @@ export class Sound {
     const f2 = c.createBiquadFilter(); f2.type = 'bandpass'; f2.Q.value = 5;
     f2.frequency.setValueAtTime(3600, t); f2.frequency.linearRampToValueAtTime(1300, t + dur);
     const g = c.createGain();
-    env(g, t, 0.05, 0.9, dur);
+    env(g, t, 0.05, vol, dur);      // Somalis are quiet cats: soft by default
     osc.connect(f1).connect(g);
     osc.connect(f2).connect(g);
     g.connect(master);
@@ -91,6 +91,26 @@ export class Sound {
   trill(count = 3, pitch = 1.3) {
     for (let i = 0; i < count; i += 1) {
       setTimeout(() => this.meow({ pitch: pitch + Math.random() * 0.2, dur: 0.14, mood: 'happy' }), i * 120);
+    }
+  }
+
+  /** The short rising "mrrp?" chirp cats use to greet and get attention. */
+  chirp(n = 2) {
+    for (let i = 0; i < n; i += 1) {
+      setTimeout(() => this.meow({ pitch: 1.25 + Math.random() * 0.15, dur: 0.13, mood: 'question', vol: 0.35 }), i * 140);
+    }
+  }
+
+  /** Teeth-chattering at birds: fast little clicks. */
+  chatter() {
+    if (!this._ok()) return;
+    const c = ctx; const t = c.currentTime;
+    for (let i = 0; i < 9; i += 1) {
+      const o = c.createOscillator(); o.type = 'square';
+      o.frequency.setValueAtTime(900 + Math.random() * 300, t + i * 0.065);
+      const g = c.createGain(); env(g, t + i * 0.065, 0.005, 0.08, 0.03);
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 3;
+      o.connect(bp).connect(g).connect(master); o.start(t + i * 0.065); o.stop(t + i * 0.065 + 0.05);
     }
   }
 
@@ -199,6 +219,8 @@ export class Voice {
     this.sensitivity = 0.5;      // 0..1, higher = picks up quieter speech
     this.level = 0;              // smoothed output level 0..1 (for lip-sync-ish motion)
     this.onState = () => {};
+    this.onHeard = () => {};
+    this.parrot = false;         // true = repeat the user's voice (cartoon mode)
     this._chunks = [];
     this._pre = [];
     this._floor = 0.01;
@@ -273,8 +295,19 @@ export class Voice {
       this._chunks.push(buf);
       this._quiet = rms < threshold * 0.8 ? this._quiet + chunkSec : 0;
       const total = this._chunks.length * chunkSec;
-      if (this._quiet > 0.7 || total > 7) this._playBack();
+      if (this._quiet > 0.7 || total > 7) {
+        if (this.parrot) this._playBack();
+        else this._heard(total - this._quiet);
+      }
     }
+  }
+
+  /** Realistic mode: the cat hears you (and reacts) but doesn't repeat you. */
+  _heard(seconds) {
+    this._chunks = []; this._pre = []; this._loud = 0;
+    this._cooldown = 0.4;
+    this._set('listening');
+    if (seconds > 0.25) this.onHeard(seconds);
   }
 
   _playBack() {

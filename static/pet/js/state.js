@@ -1,35 +1,45 @@
 // ============================================================================
 // state.js — the save file, needs simulation and economy.
 // ----------------------------------------------------------------------------
-// Needs are 0–100 and "good when high": food, energy, fun, clean.
-// They drift in real time (also while the app is closed, capped at 12 h) so
-// coming back after a day feels like coming home to a cat that missed you.
+// Modelled on real cat care (see the Care Guide sheet for sources):
+//   needs   food, water, energy, play, groom   (0–100, good when high)
+//   bond    trust between you and the cat; grows with gentle, consistent care
+//   bowls   meals go in the food bowl, water in the water bowl — the cat eats
+//           and drinks by itself when it needs to, like a real cat
+//   litter  the box gets used and needs scooping daily
+// Energy follows a real cat's rhythm: many short naps adding up to ~14 h/day.
+// Everything keeps going (gently) while the app is closed, capped at 12 h.
 // ============================================================================
 
 const KEY = 'pocketpet.save.v1';
 
-// Per real hour. Asleep, energy refills instead of draining.
-const RATES = { food: -8, energy: -6, fun: -9, clean: -4 };
-const SLEEP_ENERGY_RATE = 40;
+// Per real hour.
+const RATES = { food: -7, water: -9, play: -10, groom: -2.5 };
+const AWAKE_ENERGY = -18;      // with SLEEP_ENERGY this balances at ~14 h sleep a day
+const SLEEP_ENERGY = 22;
+const LITTER_PER_VISIT = 22;
 const MAX_OFFLINE_HOURS = 12;
 
 export const NEEDS = [
   { id: 'food',   icon: '🍗', label: 'Food' },
+  { id: 'water',  icon: '💧', label: 'Water' },
   { id: 'energy', icon: '⚡', label: 'Energy' },
-  { id: 'fun',    icon: '🎾', label: 'Fun' },
-  { id: 'clean',  icon: '🫧', label: 'Clean' },
+  { id: 'play',   icon: '🧶', label: 'Play' },
+  { id: 'groom',  icon: '🪮', label: 'Grooming' },
 ];
 
-// like: love | like | dislike | spicy
+// meal: goes in the bowl (portion = how much of the bowl it fills)
+// treat: hand-fed; only a few a day are healthy
 export const FOODS = {
-  fish:     { name: 'Fish',     icon: '🐟', price: 12, food: 30, fun: 6,  like: 'love' },
-  chicken:  { name: 'Chicken',  icon: '🍗', price: 15, food: 38, fun: 4,  like: 'love' },
-  milk:     { name: 'Milk',     icon: '🥛', price: 8,  food: 14, fun: 4,  like: 'like' },
-  cookie:   { name: 'Cookie',   icon: '🍪', price: 6,  food: 8,  fun: 12, like: 'like' },
-  cake:     { name: 'Cake',     icon: '🍰', price: 25, food: 20, fun: 25, like: 'love' },
-  broccoli: { name: 'Broccoli', icon: '🥦', price: 4,  food: 18, fun: -8, like: 'dislike' },
-  chili:    { name: 'Chili',    icon: '🌶️', price: 5,  food: 4,  fun: 10, like: 'spicy' },
+  wet:     { name: 'Wet food',       icon: '🥫', price: 6,  kind: 'meal',  portion: 60, food: 45, like: 'love' },
+  kibble:  { name: 'Dry kibble',     icon: '🥣', price: 4,  kind: 'meal',  portion: 70, food: 40, like: 'like' },
+  chicken: { name: 'Plain chicken',  icon: '🍗', price: 8,  kind: 'treat', food: 12, play: 2, like: 'love' },
+  salmon:  { name: 'Cooked salmon',  icon: '🐟', price: 9,  kind: 'treat', food: 10, play: 2, like: 'love' },
+  treats:  { name: 'Cat treats',     icon: '🍪', price: 3,  kind: 'treat', food: 4,  play: 4, like: 'love' },
+  catnip:  { name: 'Catnip',         icon: '🌿', price: 7,  kind: 'catnip', play: 25 },
+  grass:   { name: 'Cat grass',      icon: '🌱', price: 4,  kind: 'treat', food: 2,  play: 3, like: 'like' },
 };
+export const TREATS_PER_DAY = 5;
 
 export const HATS = {
   bow:    { name: 'Pink Bow',   icon: '🎀', price: 40,  level: 1 },
@@ -50,34 +60,60 @@ export const THEMES = {
 
 export function xpToNext(level) { return 40 + level * 40; }
 
-function clamp(v) { return Math.max(0, Math.min(100, v)); }
+function clamp(v, lo = 0, hi = 100) { return Math.max(lo, Math.min(hi, v)); }
 function today() { return new Date().toISOString().slice(0, 10); }
+
+/** 0..1: how active a cat tends to be at this hour (crepuscular: dawn + dusk peaks). */
+export function activityAt(hour) {
+  const peak = (h, c, w) => {
+    const d = ((h - c + 36) % 24) - 12;          // signed hours from c, wrapped to [-12, 12)
+    return Math.exp(-(d * d) / (2 * w * w));
+  };
+  return Math.min(1, 0.3 + 0.7 * Math.max(peak(hour, 6.5, 1.6), peak(hour, 19, 2)));
+}
 
 function defaultSave() {
   return {
-    v: 1,
-    name: null,                     // set on first launch
+    v: 2,
+    name: null,
     createdAt: Date.now(),
     lastTick: Date.now(),
-    needs: { food: 70, energy: 80, fun: 60, clean: 85 },
+    needs: { food: 70, water: 80, energy: 80, play: 60, groom: 85 },
+    bond: 25,
     asleep: false,
+    bowl: { food: 0, foodType: null, water: 70 },
+    litter: 10,                        // how dirty the box is
+    bladder: 45,                       // minutes until the next litter-box visit
+    treats: { day: today(), count: 0 },
     coins: 60,
     xp: 0,
     level: 1,
-    inventory: { fish: 2, milk: 2, chicken: 1, cookie: 1, broccoli: 1, chili: 1 },
+    inventory: { wet: 3, kibble: 3, treats: 3, chicken: 1 },
     hats: [],
     hat: null,
     themes: ['cream'],
     theme: 'cream',
-    room: 0,
+    room: 0,                           // where YOU are looking
+    catRoom: 0,                        // where the cat is
     daily: { last: null, streak: 0 },
-    stats: { fed: 0, petted: 0, washed: 0, slept: 0, talked: 0, games: 0, focusMin: 0 },
+    stats: { fed: 0, petted: 0, brushed: 0, washed: 0, slept: 0, talked: 0, games: 0, focusMin: 0, scooped: 0, blinks: 0 },
     best: { memory: 0, catch: 0 },
-    settings: { sound: true, voicePitch: 1.6, micSensitivity: 0.5 },
+    settings: { sound: true, voicePitch: 1.6, micSensitivity: 0.5, parrot: false },
   };
 }
 
-/** Tiny event emitter so the UI can react to state changes. */
+function migrate(data, base) {
+  if (!data.v || data.v < 2) {
+    // v1 → v2: fun→play, clean→groom, new needs, cat-safe food only.
+    const n = data.needs || {};
+    data.needs = { food: n.food ?? 70, water: 80, energy: n.energy ?? 80, play: n.fun ?? 60, groom: n.clean ?? 85 };
+    data.inventory = { ...base.inventory };
+    data.catRoom = data.room ?? 0;
+    data.v = 2;
+  }
+  return data;
+}
+
 class Emitter {
   constructor() { this.handlers = {}; }
   on(evt, fn) { (this.handlers[evt] ||= []).push(fn); return () => this.off(evt, fn); }
@@ -90,7 +126,6 @@ export class Game extends Emitter {
     super();
     this.s = this._load();
     this._catchUp();
-    this._dirty = false;
     this._saveTimer = 0;
   }
 
@@ -100,12 +135,15 @@ export class Game extends Emitter {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return base;
-      const data = JSON.parse(raw);
-      // Merge so saves from older versions pick up new fields.
+      const data = migrate(JSON.parse(raw), base);
+      const inv = {};
+      for (const [k, v] of Object.entries(data.inventory || {})) if (FOODS[k]) inv[k] = v;
       return {
         ...base, ...data,
         needs: { ...base.needs, ...data.needs },
-        inventory: { ...data.inventory },
+        bowl: { ...base.bowl, ...data.bowl },
+        treats: { ...base.treats, ...data.treats },
+        inventory: inv,
         daily: { ...base.daily, ...data.daily },
         stats: { ...base.stats, ...data.stats },
         best: { ...base.best, ...data.best },
@@ -118,7 +156,6 @@ export class Game extends Emitter {
 
   save() {
     try { localStorage.setItem(KEY, JSON.stringify(this.s)); } catch { /* private mode etc. */ }
-    this._dirty = false;
   }
 
   reset() {
@@ -130,25 +167,41 @@ export class Game extends Emitter {
     this.emit('change');
   }
 
+  /** While you were away the cat lived its life: napped, ate and drank from its bowls, used the box. */
   _catchUp() {
     const hours = Math.min(MAX_OFFLINE_HOURS, Math.max(0, (Date.now() - this.s.lastTick) / 3.6e6));
-    this._advance(hours);
-    this.s.lastTick = Date.now();
     this.offlineHours = hours;
-  }
-
-  _advance(hours) {
-    const n = this.s.needs;
+    this.s.lastTick = Date.now();
+    if (hours < 0.02) return;
+    const n = this.s.needs; const b = this.s.bowl;
     n.food = clamp(n.food + RATES.food * hours);
-    n.fun = clamp(n.fun + RATES.fun * hours * (this.s.asleep ? 0.3 : 1));
-    n.clean = clamp(n.clean + RATES.clean * hours);
-    n.energy = clamp(n.energy + (this.s.asleep ? SLEEP_ENERGY_RATE : RATES.energy) * hours);
+    n.water = clamp(n.water + RATES.water * hours);
+    // It ate/drank from the bowls when it needed to.
+    const eat = Math.min(b.food * 0.75, Math.max(0, 85 - n.food));
+    n.food += eat; b.food = clamp(b.food - eat / 0.75);
+    const drink = Math.min(b.water, Math.max(0, 90 - n.water));
+    n.water += drink; b.water = clamp(b.water - drink);
+    // Napped on and off: energy drifts toward ~75.
+    n.energy = clamp(n.energy + (75 - n.energy) * Math.min(1, hours / 3));
+    n.play = clamp(n.play + RATES.play * hours * 0.6);           // played alone a little
+    n.groom = clamp(n.groom - 0.8 * hours);                        // self-grooming mostly keeps up
+    this.s.litter = clamp(this.s.litter + LITTER_PER_VISIT * hours / 5);
+    // Neglect costs trust; a well-kept cat trusts you a little more.
+    const worst = Math.min(n.food, n.water, n.play);
+    this.s.bond = clamp(this.s.bond + (worst < 15 ? -1.5 : 0.3) * hours);
+    this.s.asleep = false;
   }
 
   /** Call every frame with real seconds. */
-  tick(dt, { focus = false } = {}) {
-    // Focus sessions slow decay — the pet shouldn't punish you for studying.
-    this._advance((dt / 3600) * (focus ? 0.4 : 1));
+  tick(dt, { focus = false, asleep = false } = {}) {
+    const h = (dt / 3600) * (focus ? 0.5 : 1);
+    const n = this.s.needs;
+    n.food = clamp(n.food + RATES.food * h);
+    n.water = clamp(n.water + RATES.water * h);
+    n.play = clamp(n.play + RATES.play * h * (asleep ? 0.2 : 1));
+    n.groom = clamp(n.groom + RATES.groom * h);
+    n.energy = clamp(n.energy + (asleep ? SLEEP_ENERGY : AWAKE_ENERGY) * h);
+    this.s.bladder -= dt / 60;
     this.s.lastTick = Date.now();
     this._saveTimer += dt;
     if (this._saveTimer > 5) { this._saveTimer = 0; this.save(); }
@@ -156,26 +209,32 @@ export class Game extends Emitter {
 
   // ---------------------------------------------------------------- derived
   get needs() { return this.s.needs; }
+  get bond() { return this.s.bond; }
+
+  bondLabel() {
+    const b = this.s.bond;
+    return b < 20 ? 'Shy' : b < 45 ? 'Warming up' : b < 70 ? 'Friends' : b < 90 ? 'Best friends' : 'Soulmates';
+  }
 
   mood() {
     const n = this.s.needs;
     const low = NEEDS.filter((x) => n[x.id] < 25).map((x) => x.id);
-    if (this.s.asleep) return { id: 'asleep', emoji: '😴', label: 'Asleep', low };
-    const min = Math.min(n.food, n.energy, n.fun, n.clean);
-    if (min >= 65) return { id: 'happy', emoji: '😸', label: 'Happy', low };
-    if (min >= 35) return { id: 'content', emoji: '😺', label: 'Content', low };
+    if (this.s.litter > 75) low.push('litter');
+    if (this.s.asleep) return { id: 'asleep', emoji: '😴', label: 'Napping', low };
+    const min = Math.min(n.food, n.water, n.energy, n.play, n.groom);
     if (n.food < 25) return { id: 'hungry', emoji: '🙀', label: 'Hungry', low };
-    if (n.energy < 25) return { id: 'tired', emoji: '😪', label: 'Sleepy', low };
-    if (n.clean < 25) return { id: 'dirty', emoji: '😾', label: 'Grubby', low };
-    if (n.fun < 25) return { id: 'bored', emoji: '😿', label: 'Bored', low };
-    return { id: 'meh', emoji: '😼', label: 'Meh', low };
+    if (n.water < 25) return { id: 'thirsty', emoji: '😿', label: 'Thirsty', low };
+    if (this.s.litter > 75) return { id: 'litter', emoji: '😾', label: 'Box is dirty!', low };
+    if (n.play < 25) return { id: 'bored', emoji: '😼', label: 'Restless', low };
+    if (n.energy < 20) return { id: 'tired', emoji: '😪', label: 'Sleepy', low };
+    if (n.groom < 25) return { id: 'scruffy', emoji: '😾', label: 'Scruffy', low };
+    if (min >= 60) return { id: 'happy', emoji: '😸', label: 'Happy', low };
+    return { id: 'content', emoji: '😺', label: 'Content', low };
   }
 
   // ---------------------------------------------------------------- mutations
-  addNeed(id, delta) {
-    this.s.needs[id] = clamp(this.s.needs[id] + delta);
-    this.emit('change');
-  }
+  addNeed(id, delta) { this.s.needs[id] = clamp(this.s.needs[id] + delta); this.emit('change'); }
+  addBond(delta) { this.s.bond = clamp(this.s.bond + delta); this.emit('change'); }
 
   addCoins(n, why) {
     this.s.coins = Math.max(0, this.s.coins + Math.round(n));
@@ -185,37 +244,100 @@ export class Game extends Emitter {
 
   addXp(n) {
     this.s.xp += n;
-    let leveled = false;
     while (this.s.xp >= xpToNext(this.s.level)) {
       this.s.xp -= xpToNext(this.s.level);
       this.s.level += 1;
-      leveled = true;
       this.s.coins += 25 * this.s.level;
       this.emit('levelup', { level: this.s.level, reward: 25 * this.s.level });
     }
     this.emit('change');
-    return leveled;
   }
 
   count(stat, n = 1) { this.s.stats[stat] = (this.s.stats[stat] || 0) + n; }
-
   setName(name) { this.s.name = name; this.save(); this.emit('change'); }
   setRoom(i) { this.s.room = i; }
+  setCatRoom(i) { this.s.catRoom = i; }
   setAsleep(v) { this.s.asleep = v; this.emit('change'); }
 
   // Food ---------------------------------------------------------------------
   hasFood(id) { return (this.s.inventory[id] || 0) > 0; }
 
-  useFood(id) {
-    if (!this.hasFood(id)) return null;
-    this.s.inventory[id] -= 1;
+  /** Put a meal in the bowl. */
+  fillBowl(id) {
     const f = FOODS[id];
-    this.addNeed('food', f.food);
-    this.addNeed('fun', f.fun);
+    if (!f || f.kind !== 'meal' || !this.hasFood(id)) return false;
+    if (this.s.bowl.food > 70) return false;
+    this.s.inventory[id] -= 1;
+    this.s.bowl.food = clamp(this.s.bowl.food + f.portion);
+    this.s.bowl.foodType = id;
+    this.save(); this.emit('bowl'); this.emit('change');
+    return true;
+  }
+
+  refillWater() {
+    this.s.bowl.water = 100;
+    this.save(); this.emit('bowl'); this.emit('change');
+  }
+
+  /** The cat takes a few bites/laps from a bowl. Returns how much it got. */
+  eatFromBowl(dt) {
+    const b = this.s.bowl; const n = this.s.needs;
+    if (b.food <= 0 || n.food >= 98) return 0;
+    const bite = Math.min(b.food, 6 * dt);
+    b.food = clamp(b.food - bite);
+    const like = FOODS[b.foodType]?.like === 'love' ? 1 : 0.9;
+    n.food = clamp(n.food + bite * 0.75 * like);
+    if (b.food <= 0) b.foodType = null;
+    this.emit('bowl');
+    return bite;
+  }
+
+  drink(dt) {
+    const b = this.s.bowl; const n = this.s.needs;
+    if (b.water <= 0 || n.water >= 98) return 0;
+    const sip = Math.min(b.water, 8 * dt);
+    b.water = clamp(b.water - sip);
+    n.water = clamp(n.water + sip);
+    this.emit('bowl');
+    return sip;
+  }
+
+  treatsLeftToday() {
+    if (this.s.treats.day !== today()) this.s.treats = { day: today(), count: 0 };
+    return Math.max(0, TREATS_PER_DAY - this.s.treats.count);
+  }
+
+  /** Hand-feed a treat / catnip. Returns the food, or null. */
+  useTreat(id) {
+    const f = FOODS[id];
+    if (!f || f.kind === 'meal' || !this.hasFood(id)) return null;
+    if (f.kind === 'treat') {
+      if (this.treatsLeftToday() <= 0) return { refused: 'too-many' };
+      this.s.treats.count += 1;
+    }
+    this.s.inventory[id] -= 1;
+    if (f.food) this.addNeed('food', f.food);
+    if (f.play) this.addNeed('play', f.play);
     this.count('fed');
-    this.addXp(4);
+    this.addXp(3);
     this.save();
     return f;
+  }
+
+  // Litter -------------------------------------------------------------------------
+  useLitter() {
+    this.s.litter = clamp(this.s.litter + LITTER_PER_VISIT);
+    this.s.bladder = 40 + Math.random() * 40;
+    this.emit('litter'); this.emit('change');
+  }
+
+  scoop() {
+    if (this.s.litter < 5) return false;
+    this.s.litter = 0;
+    this.count('scooped');
+    this.addXp(3); this.addCoins(2, 'care');
+    this.emit('litter'); this.save();
+    return true;
   }
 
   // Shop ---------------------------------------------------------------------

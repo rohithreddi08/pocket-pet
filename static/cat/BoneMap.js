@@ -71,7 +71,13 @@ export function mapBones(root) {
   });
   const eyeSide = (re) => eyes.find((b) => re.test(normalizeName(b.name))) || null;
 
+  // Front legs (for kneading, swatting, pawing): the shallowest arm-ish bone per side.
+  const arms = bones.filter((b) => /\b(upper ?arm|arm|front ?leg|shoulder|humerus)\b/.test(normalizeName(b.name)) && !END_BONE.test(normalizeName(b.name)));
+  const armSide = (re) => arms.filter((b) => re.test(normalizeName(b.name))).sort((a, b) => depth(a) - depth(b))[0] || null;
+
   return {
+    armL:  armSide(LEFT),
+    armR:  armSide(RIGHT),
     eyeL:  eyeSide(LEFT),
     eyeR:  eyeSide(RIGHT),
     head:  pick(bones, /\bhead\b/),

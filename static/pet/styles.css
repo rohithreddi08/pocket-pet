@@ -71,7 +71,8 @@ svg circle.fg { stroke: var(--accent-2); stroke-linecap: round; transform: rotat
 
 /* ---------------------------------------------------------------- nav + side */
 .nav {
-  position: fixed; top: 50%; z-index: 4; width: 48px; height: 72px; margin-top: -36px;
+  /* Above the dock at the screen edges: clear of the side button columns at any height. */
+  position: fixed; bottom: calc(104px + var(--bottom)); z-index: 4; width: 48px; height: 72px;
   background: var(--glass); border-radius: 16px; font-size: 40px; line-height: 1; box-shadow: var(--shadow); font-weight: 300;
 }
 .nav.left { left: 8px; } .nav.right { right: 8px; }
@@ -218,4 +219,34 @@ svg circle.fg { stroke: var(--accent-2); stroke-linecap: round; transform: rotat
   .dock-btn { min-width: 62px; padding: 7px 8px; }
   .nav { width: 40px; height: 60px; font-size: 32px; }
   #petName { max-width: 90px; }
+}
+
+/* ---------------------------------------------------------------- trust, status, whereabouts */
+.bond { display: grid; grid-template-columns: auto 60px; grid-template-rows: auto auto; column-gap: 4px; align-items: center; margin-left: 4px; }
+.bond span { grid-row: span 2; font-size: 16px; }
+.bond i { display: block; height: 6px; background: rgba(43,35,64,.12); border-radius: 9px; overflow: hidden; }
+.bond i b { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ff8fab, #ff4d8d); transition: width .5s; }
+.bond small { font-size: 10px; color: var(--ink-soft); white-space: nowrap; }
+#status {
+  position: fixed; top: calc(96px + var(--top)); left: 50%; transform: translateX(-50%); z-index: 4;
+  font-size: 12px; font-weight: 700; color: #fff; pointer-events: none; white-space: nowrap;
+  background: rgba(43,35,64,.62); padding: 3px 10px; border-radius: 99px; backdrop-filter: blur(6px);
+}
+#status:empty { display: none; }
+#where {
+  position: fixed; bottom: calc(184px + var(--bottom)); max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; left: 50%; transform: translateX(-50%); z-index: 5;
+  background: #2b2340; color: #fff; padding: 8px 14px; border-radius: 99px; font-weight: 800; font-size: 13px; box-shadow: var(--shadow);
+}
+.toast.hint { background: #fff8e1; color: var(--ink); box-shadow: 0 0 0 2px #ffd43b, var(--shadow); font-weight: 600; max-width: 92vw; }
+.guide h3 { margin: 14px 0 6px; font-size: 16px; }
+.guide p, .guide li { font-size: 14px; line-height: 1.5; color: var(--ink-soft); }
+.guide ul { padding-left: 18px; margin: 4px 0; }
+.guide table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.guide td { padding: 6px 4px; border-bottom: 1px solid #eadfd3; vertical-align: top; }
+.guide td:first-child { white-space: nowrap; font-weight: 700; color: var(--ink); }
+.guide a { color: var(--accent-2); }
+@media (max-width: 560px) {
+  .bond { grid-template-columns: auto 40px; }
+  #status { top: calc(146px + var(--top)); }
+  .side { gap: 7px; } .side button { width: 44px; height: 44px; font-size: 21px; }
 }

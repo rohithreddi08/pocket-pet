@@ -60,10 +60,40 @@ export class UI {
     const m = this.game.mood();
     $('#mood').textContent = `${m.emoji} ${m.label}`;
     $('#levelNum').textContent = s.level;
+    $('#bondBar').style.width = `${s.bond}%`;
+    $('#bondLabel').textContent = this.game.bondLabel();
+    $('#bond').title = `Trust: ${Math.round(s.bond)}/100 — grows with gentle, consistent care`;
     const pct = s.xp / xpToNext(s.level);
     $('#levelRing').setAttribute('stroke-dashoffset', String(RING_C * (1 - pct)));
     $('#btnDaily').classList.toggle('badge', this.game.dailyAvailable());
+    // Keep bowl/litter levels on the dock buttons current.
+    if (this._dockRoom === 'kitchen' || this._dockRoom === 'bathroom') {
+      const key = `${this._dockRoom}|${Math.round(s.bowl.food / 5)}|${Math.round(s.bowl.water / 5)}|${s.litter > 60 ? 2 : s.litter > 25 ? 1 : 0}`;
+      if (key !== this._dockKey) {
+        this._dockKey = key;
+        this._dock(this._dockRoom);
+        document.querySelectorAll('.dock-btn.tool').forEach((b) => b.classList.toggle('active', b.dataset.tool === this.tool));
+      }
+    }
   }
+
+  /** "Mochi: Napping on the cat tree" + a chip when the cat is in another room. */
+  status(pet, room) {
+    const name = this.game.s.name || 'Your cat';
+    const here = pet.room === room && !pet.travelling;
+    $('#status').textContent = here && pet.status ? `${name}: ${pet.status}` : '';
+    const where = $('#where');
+    if (!here) {
+      const r = ROOMS[pet.room];
+      this._whereRoom = pet.room;
+      where.textContent = pet.travelling ? `🐾 ${name} is on the move… ${pet.status ? `(${pet.status.toLowerCase()})` : ''}` : `🐾 ${name} is in the ${r.name}${pet.status ? ` — ${pet.status.toLowerCase()}` : ''} ›`;
+      where.hidden = false;
+    } else {
+      where.hidden = true;
+    }
+  }
+
+  hint(text) { this.toast(`💡 ${text}`, 'hint'); }
 
   _bump(sel) {
     const el = $(sel); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
@@ -91,23 +121,35 @@ export class UI {
       return b;
     };
     if (id === 'living') {
-      dock.append(btn('🎾', 'Ball', () => this.a.throwBall()), tool('🔴', 'Laser', 'laser'), btn('🎮', 'Games', () => this.openGames()));
+      dock.append(btn('🎾', 'Ball', () => this.a.throwBall()), tool('🔴', 'Laser', 'laser'), btn('🍪', 'Treat', () => this.openTray('treat')), btn('🎮', 'Games', () => this.openGames()));
     } else if (id === 'kitchen') {
-      dock.append(btn('🍽️', 'Feed', () => this.openTray()), btn('🛒', 'Groceries', () => this.openShop('food')));
+      const b = this.game.s.bowl;
+      dock.append(
+        btn('🥣', `Meal ${Math.round(b.food)}%`, () => this.openTray('meal')),
+        btn('💧', `Water ${Math.round(b.water)}%`, () => { this.a.refillWater(); this._dock('kitchen'); }),
+        btn('🍪', 'Treat', () => this.openTray('treat')),
+        btn('🛒', 'Groceries', () => this.openShop('food')));
     } else if (id === 'bathroom') {
-      dock.append(tool('🧽', 'Sponge', 'sponge'), tool('🚿', 'Shower', 'shower'));
+      const dirt = Math.round(this.game.s.litter);
+      dock.append(
+        tool('🪮', 'Brush', 'brush'),
+        btn('🧹', `Litter ${dirt > 60 ? '⚠️' : dirt > 25 ? '•' : '✓'}`, () => { this.a.scoop(); this._dock('bathroom'); }),
+        btn('🚰', 'Tap', () => this.a.toggleTap()),
+        tool('🧽', 'Bath', 'sponge'), tool('🚿', 'Rinse', 'shower'));
     } else if (id === 'bedroom') {
-      dock.append(btn('💡', 'Lights', () => this.a.toggleLights()), btn('😴', 'Nap', () => this.a.sleep()), btn('⏱️', 'Focus', () => this.openFocus()));
+      dock.append(btn('💡', 'Lights', () => this.a.toggleLights()), btn('🍪', 'Treat', () => this.openTray('treat')), btn('⏱️', 'Focus', () => this.openFocus()));
     }
+    this._dockRoom = id;
   }
 
   setTool(name) {
     this.tool = name;
     document.querySelectorAll('.dock-btn.tool').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
     const hints = {
-      laser: 'Hold a finger on the floor — move the red dot!',
-      sponge: 'Rub the sponge over the fur to make foam',
+      laser: 'Hold a finger on the floor — move the red dot! (End with a toy she can catch)',
+      sponge: 'Lather the fur — most cats only tolerate baths',
       shower: 'Hold anywhere to rinse the foam off',
+      brush: 'Brush along the back — a Somali\'s long coat needs regular brushing',
     };
     const hint = $('#toolHint');
     hint.textContent = hints[name] || '';
@@ -126,6 +168,9 @@ export class UI {
     $('#btnDaily').onclick = () => { this.sound.click(); this.openDaily(); };
     $('#btnSettings').onclick = () => { this.sound.click(); this.openSettings(); };
     $('#btnTalk').onclick = () => this.a.toggleTalk();
+    $('#btnBlink').onclick = () => this.a.slowBlink();
+    $('#btnGuide').onclick = () => { this.sound.click(); this.openGuide(); };
+    $('#where').onclick = () => { this.sound.click(); this.a.goto(this._whereRoom); };
     $('#sheetClose').onclick = () => this.closeSheet();
     $('#sheet').addEventListener('pointerdown', (e) => {
       if (e.target.id === 'sheet' && !$('#sheetClose').hidden) this.closeSheet();   // not during onboarding
@@ -174,7 +219,7 @@ export class UI {
         const card = h('div', { class: `card ${locked ? 'locked' : ''}` },
           sw || h('div', { class: 'card-icon' }, it.icon),
           h('div', { class: 'card-name' }, it.name),
-          t === 'food' ? h('div', { class: 'card-sub' }, `+${it.food} food · own ${count}`) : null,
+          t === 'food' ? h('div', { class: 'card-sub' }, `${it.kind === 'meal' ? 'Meal (bowl)' : it.kind === 'catnip' ? 'Catnip' : 'Treat'} · own ${count}`) : null,
           locked ? h('div', { class: 'card-sub' }, `🔒 Level ${it.level}`) : null,
           owned
             ? h('button', { class: 'buy owned', onclick: () => { if (t === 'hat') this.game.wearHat(id); else this.game.useTheme(id); this.sound.pop(); render(t); } },
@@ -256,17 +301,24 @@ export class UI {
   }
 
   // Food tray --------------------------------------------------------------------
-  openTray() {
+  /** kind: 'meal' (goes in the bowl) | 'treat' (hand-fed, incl. catnip) */
+  openTray(kind = 'meal') {
     const tray = $('#tray');
     const s = this.game.s;
-    const items = Object.entries(FOODS).filter(([id]) => (s.inventory[id] || 0) > 0);
+    const items = Object.entries(FOODS).filter(([id, f]) => (s.inventory[id] || 0) > 0 && (kind === 'meal' ? f.kind === 'meal' : f.kind !== 'meal'));
+    const title = kind === 'meal'
+      ? `🥣 Fill the food bowl (now ${Math.round(s.bowl.food)}%)`
+      : `🍪 Treats — ${this.game.treatsLeftToday()} left today`;
     tray.replaceChildren(
-      h('div', { class: 'tray-head' }, h('b', {}, '🍽️ Fridge'), h('button', { class: 'x', onclick: () => this.closeTray() }, '✕')),
+      h('div', { class: 'tray-head' }, h('b', {}, title), h('button', { class: 'x', onclick: () => this.closeTray() }, '✕')),
       items.length
         ? h('div', { class: 'tray-items' }, ...items.map(([id, f]) => h('button', {
-          class: 'food', onclick: () => { this.a.feed(id); this.openTray(); },
+          class: 'food', title: f.name,
+          onclick: () => { if (kind === 'meal') { this.a.fillBowl(id); this.closeTray(); } else this.a.treat(id); },
         }, h('span', { class: 'fi' }, f.icon), h('span', { class: 'fc' }, `×${s.inventory[id]}`))))
-        : h('div', { class: 'tray-empty' }, 'The fridge is empty! ', h('button', { class: 'primary', onclick: () => { this.closeTray(); this.openShop('food'); } }, 'Buy food')),
+        : h('div', { class: 'tray-empty' }, kind === 'meal' ? 'No cat food left! ' : 'No treats left! ',
+          h('button', { class: 'primary', onclick: () => { this.closeTray(); this.openShop('food'); } }, 'Buy some')),
+      kind === 'meal' ? h('p', { class: 'muted small' }, 'Adult cats do best on a couple of measured meals a day. She\'ll eat from the bowl by herself when hungry.') : null,
     );
     tray.classList.remove('hidden');
   }
@@ -299,6 +351,8 @@ export class UI {
     const pitch = h('input', { type: 'range', min: 1.1, max: 2.2, step: 0.05, value: s.settings.voicePitch });
     const sens = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: s.settings.micSensitivity });
     const sound = h('input', { type: 'checkbox' }); sound.checked = s.settings.sound;
+    const parrot = h('input', { type: 'checkbox' }); parrot.checked = s.settings.parrot;
+    parrot.onchange = () => g.setting('parrot', parrot.checked);
     let armed = false;
     const reset = h('button', {
       class: 'danger', onclick: () => {
@@ -314,12 +368,62 @@ export class UI {
     this.openSheet('⚙️ Settings', h('div', { class: 'form' },
       h('label', {}, 'Name', name),
       h('label', { class: 'inline' }, sound, ' Sound effects'),
-      h('label', {}, 'Cat voice pitch', pitch),
+      h('label', { class: 'inline' }, parrot, ' Cartoon mode: repeat my voice back (real cats don\'t do this)'),
+      h('label', {}, 'Cartoon voice pitch', pitch),
       h('label', {}, 'Microphone sensitivity', sens),
       h('div', { class: 'stats' },
-        `🍗 Fed ${st.fed} · 🤚 Petted ${st.petted} · 🛁 Washed ${st.washed} · 😴 Naps ${st.slept} · 🗣️ Chats ${st.talked} · 🎮 Games ${st.games} · ⏱️ Focus ${st.focusMin} min`),
+        `💗 Trust ${Math.round(s.bond)}/100 (${g.bondLabel()}) · 🍪 Treats ${st.fed} · 🤚 Petted ${st.petted} · 🪮 Brushed ${st.brushed} · 🧹 Scooped ${st.scooped} · 😌 Blinks ${st.blinks} · 😴 Naps ${st.slept} · 🗣️ Talked ${st.talked} · 🛁 Baths ${st.washed} · 🎮 Games ${st.games} · ⏱️ Focus ${st.focusMin} min`),
       h('p', { class: 'muted small' }, 'Cat model: “Somali Cat Animated ver 1.2” by DreamNoms (CC BY 4.0). Progress is saved on this device.'),
       reset));
+  }
+
+  // Care guide --------------------------------------------------------------------
+  openGuide() {
+    const name = this.game.s.name || 'your cat';
+    const a = (href, text) => h('a', { href, target: '_blank', rel: 'noopener' }, text);
+    const row = (sign, meaning) => h('tr', {}, h('td', {}, sign), h('td', {}, meaning));
+    this.openSheet('📖 Somali care guide', h('div', { class: 'guide' },
+      h('p', {}, `${name} behaves like a Somali — the long-haired cousin of the Abyssinian, nicknamed the “fox cat”. Everything below is what the app simulates, and what you'd see in a real Somali.`),
+      h('h3', {}, '🦊 Personality'),
+      h('ul', {},
+        h('li', {}, 'Very active, curious and bold — needs play every day, loves high perches and jumping.'),
+        h('li', {}, 'Follows its people from room to room and shows affection with head-butts and kneading.'),
+        h('li', {}, 'Affectionate but not a lap cat — it decides when cuddles happen.'),
+        h('li', {}, 'Fairly quiet: chirps and trills more than loud meows. Often fascinated by water.')),
+      h('h3', {}, '🕰️ A cat\'s day'),
+      h('p', {}, 'Cats sleep about 12–16 hours a day in many short naps, and are most active at dawn and dusk. Don\'t worry if she naps a lot — that\'s normal. You can\'t make a cat sleep; dim the lights and she may choose to.'),
+      h('h3', {}, '👀 Reading body language'),
+      h('table', {},
+        row('Tail straight up', 'Happy, confident, saying hello'),
+        row('Tip of tail twitching', 'Focused — hunting, watching birds'),
+        row('Tail lashing / thumping', 'Irritated or overstimulated — stop and give space'),
+        row('Ears sideways (“airplane”)', 'Annoyed or uneasy'),
+        row('Slow blink', 'Trust and affection — blink slowly back (😌 button)'),
+        row('Head-butt / cheek rub', 'Marking you as “mine” — a big compliment'),
+        row('Kneading + purring', 'Content and relaxed'),
+        row('Belly on show', 'Trust — but NOT an invitation. Most cats swat if you touch it.')),
+      h('h3', {}, '🤚 Petting'),
+      h('p', {}, 'Cheeks, chin and the top of the head are favourites; the back is usually fine. Avoid the tail, paws and belly. Every cat has a petting limit: watch for the tail lashing and ears turning sideways, then stop before she swats.'),
+      h('h3', {}, '✅ Daily care checklist'),
+      h('ul', {},
+        h('li', {}, 'Measured meals in the bowl (she eats when hungry) + always-fresh water.'),
+        h('li', {}, 'Scoop the litter box every day. A dirty box makes cats unhappy.'),
+        h('li', {}, 'Play sessions every day — Somalis are high-energy. End laser play with something she can “catch”.'),
+        h('li', {}, 'Brush the long coat regularly. Baths are rarely needed.'),
+        h('li', {}, 'Treats: only a few a day.')),
+      h('h3', {}, '⚠️ Never feed'),
+      h('p', {}, 'Chocolate, onions, garlic and chives (any form) are toxic to cats. Most adult cats are lactose-intolerant, so skip the saucer of milk.'),
+      h('h3', {}, '🧪 What a simulation can\'t do'),
+      h('p', {}, 'This is a model of documented behaviour, not a real animal: every cat has its own personality, and the 3D model only has a few animations (idle, walk, sit), so lying down and some poses are approximated. Talk to a vet for real-life care.'),
+      h('h3', {}, '📚 Sources'),
+      h('ul', {},
+        h('li', {}, a('https://cfa.org/breed/somali/', 'Cat Fanciers\' Association — Somali')),
+        h('li', {}, a('https://www.hillspet.com/cat-care/cat-breeds/somali', 'Hill\'s Pet — Somali breed profile')),
+        h('li', {}, a('https://www.hillspet.com/cat-care/nutrition-feeding/toxic-foods-for-cats', 'Hill\'s Pet — foods toxic to cats')),
+        h('li', {}, a('https://en.wikipedia.org/wiki/Cat_behavior', 'Wikipedia — Cat behavior')),
+        h('li', {}, a('https://www.rover.com/blog/how-much-do-cats-sleep/', 'Rover — how much cats sleep')),
+        h('li', {}, a('https://countrygrovevet.ca/2025/10/10/how-to-read-cat-body-language-ears-eyes-and-tail-clues/', 'Country Grove Vet — reading body language'))),
+    ), { wide: true });
   }
 
   // Onboarding --------------------------------------------------------------------
@@ -335,10 +439,10 @@ export class UI {
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     this.openSheet('🐾 Meet your new cat!', h('div', { class: 'center form' },
       h('div', { class: 'big' }, '😺'),
-      h('p', {}, 'A little Somali kitten just moved in. What will you call them?'),
+      h('p', {}, 'A Somali cat just moved in — curious, playful and a little independent. What will you call her?'),
       input,
       h('button', { class: 'primary', onclick: go }, 'Let\'s go!'),
-      h('p', { class: 'muted small' }, 'Tip: tap the 🎙️ button and talk — your cat repeats everything you say!')));
+      h('p', { class: 'muted small' }, 'She has her own routine: she eats from her bowl, naps, explores and follows you around. Gentle care builds trust 💗 — she may be a bit shy at first.')));
     $('#sheetClose').hidden = true;
     this._onSheetClose = null;
     setTimeout(() => input.focus(), 50);

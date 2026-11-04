@@ -4,29 +4,49 @@ A cozy 3D virtual cat for hostel residents and busy students. No mess, no dorm
 rules, no cost — a little companion that lives in your browser (and on your
 phone's home screen).
 
-## What you can do
+## A cat that behaves like a real Somali
+The cat lives its own life, based on documented Somali traits and general cat
+behaviour (sources in the in-app 📖 guide):
+
+- **Its own routine.** It eats from its bowl when hungry, drinks, uses the litter
+  box, grooms after meals, explores, perches on the cat tree and sofa, watches
+  birds through the window (and chatters at them), gets evening zoomies, and
+  naps 12–16 h a day in short naps — most active at dawn and dusk, following
+  your real clock.
+- **Somali personality.** Very active and curious, follows you from room to
+  room, greets you with head-rubs when you come home, kneads when content,
+  chirps and trills more than it meows, fascinated by a dripping tap, fetches the
+  ball. Affectionate but not a lap cat.
+- **Real body language.** Tail up = happy; tail lashing + ears sideways =
+  irritated; twitching tail tip = hunting; slow blinks = trust (blink back with 😌).
+- **Petting has limits.** Cheeks and head are favourites. Keep stroking and you'll
+  see the warning signs, then a swat. Belly = swat, unless trust is very high.
+- **Trust (💗)** grows with meals, gentle petting, slow blinks and play; drops when
+  you ignore its signals or neglect it.
+- **Real care.** Cat-safe food only: measured meals in the bowl, a few treats a day,
+  catnip (about 1 in 3 cats don't react, and it's random per cat). Fresh water,
+  daily litter scooping, brushing for the long coat; baths are rarely needed and
+  it tolerates them at best.
+- **Talking.** It hears you: its ears turn, it looks at you, it may chirp back or
+  come when called. Repeating your voice Talking-Tom-style is an optional
+  *Cartoon mode* in Settings, because real cats don't do that.
+
 | Room | Things to do |
 |---|---|
-| 🛋️ **Living room** | Throw the ball and watch it chase · laser pointer (hold & drag on the floor) · mini-games |
-| 🍳 **Kitchen** | Open the fridge and feed it — loves fish, hates broccoli, chili is… spicy · buy groceries |
-| 🛁 **Bathroom** | Scrub with the sponge to lather foam, rinse in the shower, watch it shake dry |
-| 🛏️ **Bedroom** | Lights off → it curls up in its bed and sleeps (energy refills) · focus timer for studying |
+| 🛋️ **Living room** | Ball (it chases and sometimes fetches) · laser (stalk → butt-wiggle → pounce) · treats · mini-games |
+| 🍳 **Kitchen** | Fill the food bowl · fresh water · treats · groceries |
+| 🛁 **Bathroom** | Brush · scoop the litter box · dripping tap · bath & rinse |
+| 🛏️ **Bedroom** | Dim the lights (it may choose to nap) · treats · focus timer while it naps nearby |
 
-Everywhere:
-- **🎙️ Talk** — say something and your cat repeats it in a squeaky cat voice.
-- **Touch** — tap the head (purrs), belly (giggles), tail (annoyed); stroke to pet;
-  poke it too much and it gets grumpy and turns away.
-- **Needs** — food, energy, fun and cleanliness drift in real time, even while
-  the app is closed (capped at 12 h). Thought bubbles tell you what it wants.
-- **Coins, XP & levels** — earned from care, mini-games, focus sessions and a
-  daily treat streak. Spend them on food, hats (bow, party hat, beanie, flower,
-  wizard hat, crown) and room colour themes.
-- **Mini-games** — *Purr-fect Memory* (repeat the sequence) and *Fish Frenzy*
-  (catch treats, dodge boots).
-- **Works offline / installable** — it's a PWA; progress is saved on the device.
+Also: coins, XP and levels; daily treat streak; hats and room themes; mini-games
+(*Purr-fect Memory*, *Fish Frenzy*). Works offline and installs as a PWA; progress
+is saved on the device. Swipe or use the ‹ › arrows to change rooms. The cat
+stays where it is (asleep, eating…) or follows you.
 
-Swipe left/right (or use the ‹ › arrows) to move between rooms — the cat walks
-through the doorways with you.
+**Limits:** it's a simulation of documented behaviour, not a real animal. The 3D
+model has only 5 animations (idle, walk, sit down, sit, stand up). Lying down,
+grooming, kneading and similar poses are approximated on top with procedural
+motion, so a sleeping cat sits with its head down rather than curling up.
 
 ## Run
 ```bash

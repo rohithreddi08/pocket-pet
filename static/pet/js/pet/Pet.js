@@ -21,6 +21,7 @@
 import * as THREE from 'three';
 import { ROOM_W, DOOR_Z } from '../world/House.js';
 import { activityAt } from '../state.js';
+import { pronoun, ageMonths } from '../species.js';
 
 const _q = new THREE.Quaternion();
 const _v = new THREE.Vector3();
@@ -46,8 +47,15 @@ const WARN = 55;
 const LIMIT = 85;
 
 export class Pet {
-  constructor({ root, rig, bones, layer, tracker, procedural, house, fx, sound, voice, game, camera }) {
+  constructor({ root, rig, bones, layer, tracker, procedural, house, fx, sound, voice, game, camera, length = 1.55, growth = 1 }) {
     Object.assign(this, { root, rig, bones, layer, tracker, procedural, house, fx, sound, voice, game, camera });
+    this.species = 'cat';
+    this.len = length;                  // nose-to-rump length in world units (grows with age)
+    this.growth = growth;               // 0.5 (baby) … 1 (adult)
+    this.stage = game.stage;            // baby | young | adult | senior
+    this.traits = game.traits();
+    // Bigger animals take longer strides; seniors take it easy.
+    this.baseSpeed = 0.75 * Math.sqrt(length / 1.55) * (this.stage === 'senior' ? 0.8 : 1);
 
     this.room = game.s.catRoom ?? 0;
     this.viewRoom = game.s.room ?? 0;
@@ -131,6 +139,39 @@ export class Pet {
 
   headPosition(target = new THREE.Vector3()) { return (this.bones.head || this.root).getWorldPosition(target); }
 
+  get name() { return this.game.s.name || 'Your pet'; }
+  pron(kind = 'subj') { return pronoun(this.game.pet, kind); }
+
+  /**
+   * Vocalise. Cats: quiet chirps and trills (Somalis rarely meow loudly);
+   * Dog.js overrides this with barks, whines and howls.
+   */
+  say(kind) {
+    const s = this.sound;
+    const v = this.traits.vocal ?? 0.3;
+    const kit = this.stage === 'baby' ? 1.25 : 1;          // kittens squeak higher
+    switch (kind) {
+      case 'jump': s.meow({ pitch: 1.4 * kit, dur: 0.1, vol: 0.2, mood: 'happy' }); break;
+      case 'wake': s.chirp(1); break;
+      case 'excited': s.chirp(3); break;
+      case 'greet': s.chirp(v > 0.45 ? 3 : 2); if (v > 0.45) setTimeout(() => s.meow({ pitch: 1.1 * kit, dur: 0.4, vol: 0.4 }), 450); break;
+      case 'ask': s.meow({ pitch: 1.05 * kit, mood: 'question', vol: 0.45 + v * 0.3 }); break;
+      case 'chirp': s.chirp(1); break;
+      case 'happy': s.chirp(1); break;
+      case 'reply': s.chirp(Math.random() < 0.5 ? 1 : 2); break;
+      case 'watch': s.chatter(); break;
+      case 'annoyed': s.meow({ pitch: 0.85, dur: 0.45, mood: 'angry', vol: 0.4 }); break;
+      case 'angry': s.meow({ pitch: 0.8, dur: 0.35, mood: 'angry', vol: 0.45 }); break;
+      case 'hiss': s.hiss(); break;
+      case 'protest': s.meow({ pitch: 0.8, dur: 0.7, mood: 'sad', vol: 0.5 }); break;
+      case 'protest2': s.meow({ pitch: 0.75, dur: 0.8, mood: 'sad', vol: 0.5 }); break;
+      case 'play': s.meow({ pitch: 1.35 * kit, dur: 0.2, mood: 'happy', vol: 0.3 }); break;
+      case 'proud': s.chirp(2); break;
+      case 'yawn': s.yawn(); break;
+      default: s.chirp(1);
+    }
+  }
+
   react(type, opts = {}) {
     this.reactions = this.reactions.filter((r) => r.type !== type);
     this.reactions.push({ type, t: 0, dur: opts.dur ?? REACTIONS[type] ?? 1.5 });
@@ -150,7 +191,7 @@ export class Pet {
   walk(points, onArrive, speedScale = 1) {
     this.path = points.map((p) => p.clone().setY(0));
     this.onArrive = onArrive || null;
-    this.walkSpeed = 0.75 * speedScale;
+    this.walkSpeed = this.baseSpeed * speedScale;
     this.sitting = false;
   }
 
@@ -171,7 +212,7 @@ export class Pet {
     from.y = this.baseY;
     const yaw = Math.atan2(-(target.z - from.z), target.x - from.x);
     this.jump = { from, to: target.clone(), t: 0, dur: 0.6, yaw, then };
-    if (this.inView) this.sound.meow({ pitch: 1.4, dur: 0.1, vol: 0.2, mood: 'happy' });
+    if (this.inView) this.say('jump');
   }
 
   /** Walk through the doorways to room `to`. */
@@ -229,7 +270,7 @@ export class Pet {
   _decide() {
     const g = this.game; const n = g.needs; const s = g.s; const b = s.bowl;
     const hour = new Date().getHours() + new Date().getMinutes() / 60;
-    const act = activityAt(hour);
+    const act = activityAt(hour, this.species);
     const day = hour >= 7 && hour < 19;
 
     // Urgent needs first — a real cat sorts these out itself if it can.
@@ -245,9 +286,9 @@ export class Pet {
       ['nap', (1 - act) * 0.55 + (n.energy < 55 ? 0.45 : 0) + (this.house.rooms[this.room].lightsOn ? 0 : 0.4)],
       ['groom', n.groom < 85 ? 0.28 : 0.1],
       ['explore', act * 0.45],
-      ['perch', act * 0.3],
+      ['perch', this._canJumpHigh() ? act * 0.3 : 0],
       ['window', day ? 0.28 : 0.04],
-      ['zoomies', act > 0.75 && n.energy > 55 ? 0.14 : 0.01],
+      ['zoomies', (act > 0.75 && n.energy > 55 ? 0.14 : 0.01) * (this.stage === 'baby' ? 2.5 : this.stage === 'senior' ? 0.2 : 1)],
       ['attention', g.bond > 25 ? (n.play < 45 ? 0.45 : 0.18) : 0.04],
       ['tap', this.house.tap.on ? 0.9 : 0],
       ['idle', 0.32],
@@ -295,7 +336,7 @@ export class Pet {
   }
 
   _startPerch() {
-    const perches = this.house.perches;
+    const perches = this._perches();
     if (!perches.length) return this._startIdle();
     const p = pick(perches);
     this._setAct('perch', `Up on ${p.name}`, { dur: rand(20, 50), p });
@@ -309,7 +350,7 @@ export class Pet {
     // Favourite spots: its bed, the cat tree, the sofa — whichever is closest-ish.
     const spots = [
       ...this.house.beds.map((b) => ({ ...b, w: 0.45 })),
-      ...this.house.perches.filter((p) => p.nap).map((p) => ({ room: p.room, perch: p, name: p.name, w: 0.3 })),
+      ...this._perches().filter((p) => p.nap).map((p) => ({ room: p.room, perch: p, name: p.name, w: 0.3 })),
     ];
     let choices = preferRoom != null ? spots.filter((s) => s.room === preferRoom) : spots;
     if (!choices.length) choices = spots;
@@ -341,7 +382,7 @@ export class Pet {
     this.game.setAsleep(true);
     this.game.count('slept');
     if (this.act) this.act.phase = 'do';
-    if (this.inView) { this.react('yawn'); this.sound.yawn(); }
+    if (this.inView) { this.react('yawn'); this.say('yawn'); }
   }
 
   wake(withSound = true) {
@@ -349,7 +390,7 @@ export class Pet {
     this.sleeping = false;
     this.game.setAsleep(false);
     this.react('yawn', { dur: 1.6 });
-    if (withSound && this.inView) setTimeout(() => this.sound.chirp(1), 700);
+    if (withSound && this.inView) setTimeout(() => this.say('wake'), 700);
     if (this.act?.id === 'nap') this._endAct();
   }
 
@@ -364,7 +405,7 @@ export class Pet {
     const r = this.house.rooms[this.room];
     const pts = Array.from({ length: 6 }, () => new THREE.Vector3(rand(r.bounds.x0, r.bounds.x1), 0, rand(r.bounds.z0, r.bounds.z1)));
     this._setAct('zoomies', 'Zoomies!', {}, false);
-    if (this.inView) this.sound.chirp(3);
+    if (this.inView) this.say('excited');
     this.leave(() => this.walk(pts, () => { this.react('hop'); this._endAct(); }, 2.2));
   }
 
@@ -374,7 +415,7 @@ export class Pet {
       if (!this.act) return;
       this.act.phase = 'do';
       this.status = this.game.needs.play < 45 ? 'Wants to play with you' : 'Wants some attention';
-      if (this.inView) { this.sound.chirp(2); if (this.game.bond > 40) this.react('bunt'); }
+      if (this.inView) { this.say('greet'); if (this.game.bond > 40) this.react('bunt'); }
     });
   }
 
@@ -384,14 +425,16 @@ export class Pet {
     this.goTo(this.viewRoom, this.frontOf(this.viewRoom), () => {
       if (!this.act) return;
       this.act.phase = 'do'; this.sitting = true;
-      if (this.inView) this.sound.meow({ pitch: 1.05, mood: 'question', vol: 0.6 });
+      if (this.inView) this.say('ask');
     });
   }
 
   _startBowl(kind) {
     const f = this.house.feeding[kind];
     this._setAct('bowl', kind === 'food' ? 'Eating' : 'Drinking water', { kind, dur: 25 }, false);
-    this.goTo(1, f.stand, () => {
+    // Stand so the nose (half a body length ahead) is over the bowl.
+    const stand = f.at.clone().add(new THREE.Vector3(0, 0, this.len * 0.47));
+    this.goTo(1, stand, () => {
       if (!this.act) return;
       this.act.phase = 'do';
       this.lookAt = f.at.clone().setY(0); this.lookUntil = this.time + 30;
@@ -421,6 +464,18 @@ export class Pet {
   }
 
   _faceTo(p) { this._faceTarget = p.clone(); }
+
+  /** Young kittens can't make the big jumps yet; old cats stop trying. */
+  _canJumpHigh() {
+    const m = ageMonths(this.game.pet);
+    return m >= 4 && this.stage !== 'senior';
+  }
+
+  /** High places this animal can and will use. */
+  _perches() { return this._canJumpHigh() ? this.house.perches : []; }
+
+  /** Hook for species that have extra animation poses (dogs: eat, sniff). */
+  _pose(pose) { return pose; }
 
   _runAct(dt) {
     const a = this.act;
@@ -457,7 +512,7 @@ export class Pet {
             const day = new Date().getHours() >= 7 && new Date().getHours() < 19;
             if (day) {
               this.fx.spawn('bird', a.w.glass.clone().add(new THREE.Vector3(-0.8, rand(-0.3, 0.3), 0.05)), { vel: new THREE.Vector3(rand(0.4, 0.8), rand(-0.05, 0.1), 0) });
-              setTimeout(() => { if (this.act === a) { this.react('perk'); if (this.inView) this.sound.chatter(); } }, 500);
+              setTimeout(() => { if (this.act === a) { this.react('perk'); if (this.inView) this.say('watch'); } }, 500);
               g.addNeed('play', 1.5);
             }
           }
@@ -470,7 +525,7 @@ export class Pet {
           this._chirpT -= dt;
           if (this._chirpT <= 0 && this.inView) {
             this._chirpT = rand(4, 7);
-            if (a.id === 'ask') this.sound.meow({ pitch: 1.05, mood: 'question', vol: 0.55 }); else this.sound.chirp(1);
+            if (a.id === 'ask') this.say('ask'); else this.say('chirp');
           }
           // Ask for food: after a while, lead the way to the bowl and wait there.
           if (a.id === 'ask' && a.what === 'food' && a.t > a.dur && this.room !== 1) {
@@ -536,7 +591,7 @@ export class Pet {
     this.viewRoom = i;
     if (this.sleeping || this.jump) return;
     const interruptible = !this.act || this.act.interruptible;
-    const chance = this.game.bond < 30 ? 0.3 : this.game.bond < 60 ? 0.75 : 0.92;
+    const chance = Math.min(0.97, (this.game.bond < 30 ? 0.3 : this.game.bond < 60 ? 0.75 : 0.92) * (this.traits.follow ?? 1));
     if (interruptible && i !== this.room && Math.random() < chance) {
       setTimeout(() => {
         if (this.viewRoom !== i || this.sleeping || (this.act && !this.act.interruptible)) return;
@@ -555,7 +610,7 @@ export class Pet {
     this.goTo(this.viewRoom, this.frontOf(this.viewRoom), () => {
       if (!this.act) return;
       this.act.phase = 'do';
-      this.sound.chirp(3);
+      this.say('greet');
       this.react('bunt'); this.react('love');
       setTimeout(() => this._endAct(), 5000);
     }, 1.2);
@@ -580,7 +635,7 @@ export class Pet {
     this._addStim(region, 0.6);
     if (this.overstim >= LIMIT) { this._swat(); return 'swat'; }
     if (region === 'tail') {
-      this.react('annoyed'); this.sound.meow({ pitch: 0.85, dur: 0.45, mood: 'angry', vol: 0.4 });
+      this.react('annoyed'); this.say('annoyed');
       this.onHint('Most cats don\'t like their tail being touched — try the cheeks and head instead.');
       return 'annoyed';
     }
@@ -589,7 +644,7 @@ export class Pet {
       this.react('purr'); this.react('bunt', { dur: 1.6 });
       this._purr(2);
       this.game.count('petted'); this.game.addNeed('play', 1.5); this.game.addBond(0.4); this.game.addXp(1);
-      if (Math.random() < 0.3) this.sound.chirp(1);
+      if (Math.random() < 0.3) this.say('happy');
       return 'purr';
     }
     this.react('flinch');
@@ -626,18 +681,20 @@ export class Pet {
   }
 
   _addStim(region, k) {
-    const rate = (TOLERANCE[region] ?? 20) * (1.4 - this.game.bond / 125);
+    const rate = ((this.tolerance || TOLERANCE)[region] ?? 20) * (1.4 - this.game.bond / 125);
     this.overstim = Math.min(120, this.overstim + rate * k);
     if (this.overstim >= WARN && !this.warned) {
       this.warned = true;
-      this.onHint('Tail lashing and ears turning sideways = she\'s had enough. Stop petting now, or she\'ll swat.');
+      this.onHint(this._warnHint());
     }
   }
 
+  _warnHint() { return `Tail lashing and ears turning sideways = ${this.pron()}'s had enough. Stop petting now, or ${this.pron()}'ll swat.`; }
+
   _swat(hint) {
     this.react('swat'); this.react('annoyed');
-    if (this.overstim > 100) { this.react('hiss'); this.sound.hiss(); }
-    else this.sound.meow({ pitch: 0.8, dur: 0.35, mood: 'angry', vol: 0.45 });
+    if (this.overstim > 100) { this.react('hiss'); this.say('hiss'); }
+    else this.say('angry');
     this.game.addBond(-1.5);
     this.overstim = 45;
     this.purring = 0;
@@ -687,12 +744,12 @@ export class Pet {
     if (this.inView) {
       this.react('perk');
       this.lookAt = this.camera.position.clone(); this.lookUntil = this.time + 3;
-      if (Math.random() < (this.game.bond > 50 ? 0.7 : 0.4)) setTimeout(() => this.sound.chirp(Math.random() < 0.5 ? 1 : 2), 500);
+      if (Math.random() < (this.game.bond > 50 ? 0.7 : 0.4)) setTimeout(() => this.say('reply'), 500);
       this.game.addBond(0.2);
     } else if (this.game.bond > 35 && (!this.act || this.act.interruptible)) {
       this.stop();
       this._setAct('follow', 'Coming when called', {}, true);
-      this.goTo(this.viewRoom, this.frontOf(this.viewRoom), () => { this._endAct(); this.sound.chirp(2); }, 1.3);
+      this.goTo(this.viewRoom, this.frontOf(this.viewRoom), () => { this._endAct(); this.say('greet'); }, 1.3);
     }
   }
 
@@ -723,6 +780,20 @@ export class Pet {
   }
 
   refuse() { this.react('sniff', { dur: 1.2 }); setTimeout(() => this.react('headshake'), 1200); }
+
+  /** Cooking smells: comes to the kitchen, sniffs the air, asks politely. */
+  beg() {
+    if (this.sleeping || (this.act && !this.act.interruptible)) return;
+    this.stop(); this._endAct();
+    this._setAct('attention', 'Sniffing the cooking smells', { dur: 20 });
+    this.goTo(1, new THREE.Vector3(this.house.rooms[1].cx - 0.2, 0, -1.4), () => {
+      if (this.act?.id !== 'attention') return;
+      this.act.phase = 'do'; this.sitting = true;
+      this.react('sniff', { dur: 2.5 });
+      this.lookAt = new THREE.Vector3(this.house.rooms[1].cx + 0.1, 1.0, -2.6); this.lookUntil = this.time + 20;
+      if (this.inView) this.say('ask');
+    });
+  }
 
   /** Catnip: ~2 in 3 cats react (it's genetic). */
   catnip() {
@@ -770,7 +841,7 @@ export class Pet {
     this.foam.push(s);
     // Most cats tolerate baths at best.
     if (!this.isReacting('annoyed') && Math.random() < 0.12) {
-      this.react('annoyed'); this.sound.meow({ pitch: 0.8, dur: 0.7, mood: 'sad', vol: 0.5 });
+      this.react('annoyed'); this.say('protest');
     }
     this.sound.squish();
     return true;
@@ -782,7 +853,7 @@ export class Pet {
     for (let i = 0; i < 3; i += 1) {
       this.fx.spawn('drop', over.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.9, 0, (Math.random() - 0.5) * 0.5)));
     }
-    if (!this.isReacting('annoyed') && Math.random() < dt * 0.6) { this.react('annoyed'); this.sound.meow({ pitch: 0.75, dur: 0.8, mood: 'sad', vol: 0.5 }); }
+    if (!this.isReacting('annoyed') && Math.random() < dt * 0.6) { this.react('annoyed'); this.say('protest2'); }
     if (this.foam.length && Math.random() < dt * 12) {
       const s = this.foam.shift();
       this.fx.spawn('bubble', s.getWorldPosition(new THREE.Vector3()), { count: 1 });
@@ -819,7 +890,7 @@ export class Pet {
 
   pounce() {
     this.react('hop', { dur: 0.55 });
-    if (this.inView) this.sound.meow({ pitch: 1.35, dur: 0.2, mood: 'happy', vol: 0.3 });
+    if (this.inView) this.say('play');
   }
 
   /** Somalis are known to fetch: carry the ball back to you. */
@@ -830,7 +901,7 @@ export class Pet {
     this.walk([this.frontOf(this.viewRoom)], () => {
       this.carry = null;
       onDrop?.();
-      this.sound.chirp(2);
+      this.say('proud');
       this.react('proud');
       this._endAct();
     }, 1.1);
@@ -983,6 +1054,7 @@ export class Pet {
     else if (turningInPlace) { pose = 'walk'; speed = 0.25; }
     else if (this.sleeping) pose = 'rest';
     else if (this.sitting) pose = 'sit';
+    pose = this._pose(pose, moving);
     this.rig.update(pose, 0, speed, dt);
 
     if (this.procedural) {
@@ -992,12 +1064,17 @@ export class Pet {
     this._bodyLanguage(dt, crouch);
     this._applyReactions(dt);
     this._face(dt);
+    // Babies have big heads for their bodies.
+    if (this.growth < 0.95 && this.bones.head) {
+      const k = 1 + (1 - this.growth) * 0.45;
+      this.layer.scale(this.bones.head, k, k, k);
+    }
     this.root.position.y = this.baseY + this.hopY;
 
     // carried ball sits in the mouth
     if (this.carry) {
-      const m = this.headPosition(_v).add(this.noseDir().multiplyScalar(0.28));
-      m.y -= 0.18;
+      const m = this.headPosition(_v).add(this.noseDir().multiplyScalar(this.len * 0.18));
+      m.y -= this.len * 0.11;
       this.carry.position.copy(m);
     }
 
@@ -1193,3 +1270,5 @@ export class Pet {
 
   set pointerActive(v) { this._pointerActive = v; }
 }
+
+export { WARN, LIMIT, rand, pick, envelope, angleDiff };

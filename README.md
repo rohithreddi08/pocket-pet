@@ -4,6 +4,59 @@ A cozy 3D virtual cat for hostel residents and busy students. No mess, no dorm
 rules, no cost — a little companion that lives in your browser (and on your
 phone's home screen).
 
+## 🏪 Pet Store — raise several pets
+Tap your profile (top left) or 🏪 to open the **Pet Store**. It has a **Cats** and a **Dogs**
+section, with new animals every day from breeders and 🏠 rescues (low adoption fee —
+adopt, don't shop). Your first adoption is free; your home holds up to 4 pets.
+
+| Section | Breeds | Ages | 
+|---|---|---|
+| 🐈 Cats | Somali, Abyssinian, Domestic Longhair (mixed breed) | kitten (2–4 months), young, adult, senior |
+| 🐕 Dogs | Siberian Husky, Alaskan Malamute, Shiba Inu, Akita, Indie (Indian Pariah Dog) | puppy, young, adult, senior |
+
+Each animal has its own coat colour, sex and personality (playful, cuddly, shy,
+independent, chatty, calm), and the store shows its energy, voice, grooming needs and
+how well the breed copes with **flat / hostel life**. Pets **grow up in real time**: a
+2-month kitten is small with a big head, eats 3–4 small meals and sleeps more; seniors
+slow down and stop making big jumps. One pet is at home on screen at a time; the
+others keep living their routine in the background — switch between them from your
+profile.
+
+## 🐕 Dogs behave like dogs
+- Fit your day (active morning and evening, asleep at night), follow you everywhere,
+  greet you with a whole-body wiggle, bring you the ball, beg while you cook.
+- **Walks** (🦮 in the living room): clip the lead, head out of the front door, and
+  deal with what happens — sniff stops, wee breaks, picking up poo 🛍️, other dogs,
+  squirrels, a thirsty dog. Then wipe muddy paws.
+- **Toilet:** when the bladder is full the dog waits by the door and whines; puppies
+  can't hold it long. If nobody comes it uses the pee pad — or has an accident
+  (clean it up; never scold).
+- **Training** (🎓): Sit, Down, Paw, Spin, Speak, Come. Give the cue; if the dog gets
+  it right, reward within ~2 seconds. Short sessions (15 min/day), positive
+  reinforcement only. Independent breeds learn slower; puppies faster.
+- Body language: wag speed and height, tucked tail, ears back, the head tilt when you
+  talk, calming signals (lip lick, turning away) when it's had enough. Most dogs love
+  belly rubs once they trust you. No laser pointer for dogs (vets advise against it).
+
+## 🍳 Cook real food
+In the kitchen, **Cook** a vet-informed recipe for the pet at home (3 for cats, 4 for
+dogs, including home-made training treats). It takes real time and effort, about
+4–6 minutes:
+1. Wash your hands.
+2. Pick the ingredients. Onion, garlic, grapes, chocolate and other hazards are on the
+   shelf too, and each one comes with an explanation.
+3. Trim fat, pick out the bones, chop and rinse.
+4. Cook on the hob in real time, stirring when it bubbles, until a thermometer shows
+   the centre is safe (74 °C for chicken).
+5. Let it cool below 40 °C.
+6. Mix in the vet supplement (taurine and calcium for cats).
+7. Weigh portions for *your* pet. Grams are worked out from its weight, age and the
+   recipe's calories (RER = 70 × kg^0.75).
+
+Serve one portion and fridge the rest; it keeps for 3 days, then it's thrown out. The
+pot keeps cooking (and can burn) if you walk away. You get a quality score at the end.
+Fresh ingredients are in the shop (🛒 → 🥕 Fresh).
+
 ## A cat that behaves like a real Somali
 The cat lives its own life, based on documented Somali traits and general cat
 behaviour (sources in the in-app 📖 guide):
@@ -43,10 +96,14 @@ Also: coins, XP and levels; daily treat streak; hats and room themes; mini-games
 is saved on the device. Swipe or use the ‹ › arrows to change rooms. The cat
 stays where it is (asleep, eating…) or follows you.
 
-**Limits:** it's a simulation of documented behaviour, not a real animal. The 3D
+**Limits:** it's a simulation of documented behaviour, not a real animal. The cat
 model has only 5 animations (idle, walk, sit down, sit, stand up). Lying down,
 grooming, kneading and similar poses are approximated on top with procedural
-motion, so a sleeping cat sits with its head down rather than curling up.
+motion, so a sleeping cat sits with its head down rather than curling up. The dogs are
+low-poly models with their own set of animations; sitting is procedural, and they
+sleep lying on their side. Some breeds share a model, recoloured and resized: Abyssinian
+and Domestic Longhair use the Somali; Malamute uses the Husky; Akita and Indie use the
+Shiba. The store says so on each of them. Walks are about 3× faster than real ones.
 
 ## Run
 ```bash
@@ -67,11 +124,16 @@ app_classic.py          the original Streamlit version (pet_engine.py, storage.p
 static/pet/             the game
   index.html styles.css manifest.json sw.js icons/
   js/main.js            boot, camera, input, game actions
-  js/state.js           save file, needs, economy, shop catalogue
+  js/state.js           save file (profile + pets), needs, economy, shop catalogue
+  js/species.js         pet store: species, breeds, coats, ages, personalities, nutrition
+  js/cooking.js         ingredients, recipes, kitchen hazards
   js/audio.js           synthesized cat sounds + talk-back voice
   js/world/             House (rooms, furniture, lights), textures, particles
-  js/pet/               Pet (behaviour + body language), Accessories (hats)
-  js/ui/                HUD, sheets, tray, toasts
+  js/pet/               Pet (cat brain), Dog (dog brain), factory (models, coats, ages,
+                        store thumbnails), Accessories (hats)
+  js/ui/                HUD, sheets, tray, toasts; store.js (profile + pet store),
+                        kitchen.js (cooking), outdoor.js (walks + training), guide.js
+  models/               dog models (husky.glb, shiba.glb) + license
   js/games/             mini-games
 static/cat/             cat engine shared with the game + the original 3D garden viewer
   CatLoader ClipRig BoneMap PoseLayer HeadTracker Procedural …
@@ -92,5 +154,9 @@ it from your app, and update the credit in `app.py`, the settings sheet and belo
 - Cat model: [Somali Cat Animated ver 1.2](https://sketchfab.com/3d-models/somali-cat-animated-ver-12-e185c3fd92b64c32b4515a32b29252fc)
   by [DreamNoms](https://sketchfab.com/DreamNoms), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
   Used unmodified (a stray helper cube in the file is skipped at load time).
+- Dog models: [Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html)
+  by Quaternius, [CC0](https://creativecommons.org/publicdomain/zero/1.0/) (Husky and Shiba Inu,
+  converted to .glb; `static/pet/models/LICENSE-Quaternius.txt`). Lie-down / sleep / get-up
+  clips are derived in code from the pack's own animation.
 - [three.js](https://threejs.org) r160, MIT license (`static/vendor/three/LICENSE`).
 - Everything else (house, furniture, textures, sounds, icons) is generated in code.

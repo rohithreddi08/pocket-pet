@@ -207,6 +207,152 @@ export class Sound {
   }
 
   yawn() { this.meow({ pitch: 0.7, dur: 1.1, mood: 'sad' }); }
+
+  // ------------------------------------------------------------------ dogs
+  // size 0 (tiny) … 1 (giant): bigger dogs have lower, rounder voices.
+
+  /** A bark: a harsh, fast-falling burst through a chest/mouth formant. */
+  bark({ size = 0.6, n = 1, vol = 0.5, play = false } = {}) {
+    if (!this._ok()) return;
+    const c = ctx;
+    for (let i = 0; i < n; i += 1) {
+      const t = c.currentTime + i * (0.22 + Math.random() * 0.08);
+      const f0 = (play ? 1.25 : 1) * (520 - size * 330) * (0.95 + Math.random() * 0.1);
+      const o = c.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f0 * 1.25, t);
+      o.frequency.exponentialRampToValueAtTime(f0 * 0.7, t + 0.14);
+      const nz = c.createBufferSource(); nz.buffer = this.noise;
+      const nzg = c.createGain(); nzg.gain.value = 0.35;
+      const f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 1300 - size * 600; f1.Q.value = 2.2;
+      const f2 = c.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = 3200 - size * 1400;
+      const g = c.createGain(); env(g, t, 0.008, vol, 0.13 + size * 0.06);
+      o.connect(f1); nz.connect(nzg).connect(f1);
+      f1.connect(f2).connect(g).connect(master);
+      o.start(t); o.stop(t + 0.3);
+      nz.start(t, Math.random()); nz.stop(t + 0.3);
+    }
+  }
+
+  /** A whine: thin, high and wavering. */
+  whine({ size = 0.6, dur = 0.7 } = {}) {
+    if (!this._ok()) return;
+    const c = ctx; const t = c.currentTime;
+    const f0 = 1100 - size * 350;
+    const o = c.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(f0 * 0.85, t);
+    o.frequency.linearRampToValueAtTime(f0 * 1.15, t + dur * 0.4);
+    o.frequency.linearRampToValueAtTime(f0 * 0.8, t + dur);
+    const vib = c.createOscillator(); vib.frequency.value = 7;
+    const vg = c.createGain(); vg.gain.value = f0 * 0.03;
+    vib.connect(vg).connect(o.frequency);
+    const g = c.createGain(); env(g, t, 0.08, 0.16, dur);
+    o.connect(g).connect(master);
+    o.start(t); vib.start(t); o.stop(t + dur + 0.1); vib.stop(t + dur + 0.1);
+  }
+
+  /** A low growl: rumbling, amplitude-modulated buzz. */
+  growl({ size = 0.6, dur = 0.8 } = {}) {
+    if (!this._ok()) return;
+    const c = ctx; const t = c.currentTime;
+    const o = c.createOscillator(); o.type = 'sawtooth';
+    o.frequency.value = 110 - size * 40;
+    const am = c.createGain(); am.gain.value = 0.5;
+    const lfo = c.createOscillator(); lfo.frequency.value = 24;
+    const lg = c.createGain(); lg.gain.value = 0.5;
+    lfo.connect(lg).connect(am.gain);
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+    const g = c.createGain(); env(g, t, 0.1, 0.55, dur);
+    o.connect(lp).connect(am).connect(g).connect(master);
+    o.start(t); lfo.start(t); o.stop(t + dur + 0.15); lfo.stop(t + dur + 0.15);
+  }
+
+  /** A long howl (huskies, malamutes). */
+  howl({ size = 0.75 } = {}) {
+    if (!this._ok()) return;
+    const c = ctx; const t = c.currentTime; const dur = 2.6;
+    const f0 = 480 - size * 140;
+    const o = c.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0 * 0.8, t);
+    o.frequency.linearRampToValueAtTime(f0 * 1.35, t + 0.7);
+    o.frequency.linearRampToValueAtTime(f0 * 1.25, t + 1.8);
+    o.frequency.linearRampToValueAtTime(f0 * 0.9, t + dur);
+    const vib = c.createOscillator(); vib.frequency.value = 5;
+    const vg = c.createGain(); vg.gain.value = 6;
+    vib.connect(vg).connect(o.frequency);
+    const f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.Q.value = 5;
+    f1.frequency.setValueAtTime(700, t); f1.frequency.linearRampToValueAtTime(1000, t + 0.8); f1.frequency.linearRampToValueAtTime(650, t + dur);
+    const g = c.createGain(); env(g, t, 0.35, 0.5, dur - 0.35);
+    o.connect(f1).connect(g).connect(master);
+    o.start(t); vib.start(t); o.stop(t + dur + 0.1); vib.stop(t + dur + 0.1);
+  }
+
+  /** The husky "woo-woo" talk. */
+  woo({ size = 0.75 } = {}) {
+    if (!this._ok()) return;
+    const c = ctx; const t0 = c.currentTime;
+    for (let i = 0; i < 2; i += 1) {
+      const t = t0 + i * 0.32;
+      const f0 = (420 - size * 120) * (i ? 1.15 : 1);
+      const o = c.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f0 * 0.85, t);
+      o.frequency.linearRampToValueAtTime(f0 * 1.2, t + 0.12);
+      o.frequency.linearRampToValueAtTime(f0, t + 0.28);
+      const f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.Q.value = 4;
+      f1.frequency.setValueAtTime(600, t); f1.frequency.linearRampToValueAtTime(950, t + 0.25);
+      const g = c.createGain(); env(g, t, 0.04, 0.45, 0.26);
+      o.connect(f1).connect(g).connect(master);
+      o.start(t); o.stop(t + 0.35);
+    }
+  }
+
+  /** A contented huff / snort. */
+  huff({ size = 0.6 } = {}) {
+    if (!this._ok()) return;
+    const c = ctx; const t = c.currentTime;
+    const src = c.createBufferSource(); src.buffer = this.noise;
+    const lp = c.createBiquadFilter(); lp.type = 'bandpass'; lp.frequency.value = 900 - size * 400; lp.Q.value = 1.2;
+    const g = c.createGain(); env(g, t, 0.02, 0.35, 0.18);
+    src.connect(lp).connect(g).connect(master);
+    src.start(t, Math.random()); src.stop(t + 0.25);
+  }
+
+  dogYawn({ size = 0.6 } = {}) {
+    if (!this._ok()) return;
+    this._tone(700 - size * 200, 0.7, 'triangle', 0.12, 0, 300 - size * 80);
+  }
+
+  /** The Shiba Inu "scream" — dramatic, high and long. */
+  shibaScream() {
+    if (!this._ok()) return;
+    const c = ctx; const t = c.currentTime; const dur = 1.2;
+    const o = c.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(900, t); o.frequency.linearRampToValueAtTime(1250, t + 0.3); o.frequency.linearRampToValueAtTime(800, t + dur);
+    const vib = c.createOscillator(); vib.frequency.value = 9;
+    const vg = c.createGain(); vg.gain.value = 40;
+    vib.connect(vg).connect(o.frequency);
+    const f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 1500; f1.Q.value = 3;
+    const g = c.createGain(); env(g, t, 0.05, 0.4, dur);
+    o.connect(f1).connect(g).connect(master);
+    o.start(t); vib.start(t); o.stop(t + dur + 0.1); vib.stop(t + dur + 0.1);
+  }
+
+  /** Cooking sounds. */
+  chop() { this._tone(260, 0.05, 'square', 0.12); this.squish(); }
+  sizzle(on) {
+    if (on && !this._sizzle && this._ok()) {
+      const c = ctx;
+      const src = c.createBufferSource(); src.buffer = this.noise; src.loop = true;
+      const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3000;
+      const g = c.createGain(); g.gain.value = 0.0001; g.gain.exponentialRampToValueAtTime(0.06, c.currentTime + 0.4);
+      src.connect(hp).connect(g).connect(master); src.start();
+      this._sizzle = { src, g };
+    } else if (!on && this._sizzle) {
+      const { src, g } = this._sizzle; const t = ctx.currentTime;
+      g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); src.stop(t + 0.35);
+      this._sizzle = null;
+    }
+  }
 }
 
 // ============================================================================

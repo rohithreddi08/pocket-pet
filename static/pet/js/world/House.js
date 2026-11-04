@@ -126,6 +126,8 @@ export class House {
     this._buildBedroom(this.rooms[3]);
     this._buildLights();
     this._updateClock(true);
+    this.species = 'cat';
+    this.setAccident(null);          // creates the (hidden) puddle so it's clickable later
     this.current = 0;
     this._lightLevel = 1;
   }
@@ -263,10 +265,38 @@ export class House {
     // High places a cat jumps onto (ground = take-off point, top = where it sits).
     this.perches.push(
       { room: 0, name: 'the cat tree', ground: new THREE.Vector3(cx - 2.0, 0, 0.1), top: new THREE.Vector3(cx - 3.1, 1.69, -0.3), nap: true },
-      { room: 0, name: 'the sofa', ground: new THREE.Vector3(cx - 1.6, 0, -1.2), top: new THREE.Vector3(cx - 1.6, 0.72, -2.3), nap: true },
+      { room: 0, name: 'the sofa', ground: new THREE.Vector3(cx - 1.6, 0, -1.2), top: new THREE.Vector3(cx - 1.6, 0.72, -2.3), nap: true, dog: true },
     );
     this.windows.push({ room: 0, spot: new THREE.Vector3(cx + 1.5, 0, -1.0), glass: new THREE.Vector3(cx + 1.5, 2.0, -2.9) });
+    this.catTree = tree;
+
+    // Front door on the left wall (walks start here).
+    const door = new THREE.Group();
+    const doorMat = mat('#8d5b3e', { rough: 0.55 });
+    const leaf = new THREE.Group();
+    leaf.add(mesh(rbox(0.08, 2.15, 0.95, 0.02), doorMat, { z: 0.475 }));
+    for (const [y, h] of [[1.55, 0.7], [0.65, 0.8]]) leaf.add(mesh(box(0.1, h, 0.7), mat('#7a4c33', { rough: 0.6 }), { y: y - 1.075, z: 0.475, cast: false }));
+    leaf.add(mesh(new THREE.SphereGeometry(0.045, 10, 8), mat('#d9c6a5', { rough: 0.3, metal: 0.7 }), { x: 0.07, y: -0.05, z: 0.85 }));
+    leaf.position.set(0, 1.075, -0.475);
+    door.add(leaf);
+    door.add(mesh(box(0.14, 0.12, 1.15), mat('#fbf7f0', { rough: 0.5 }), { y: 2.2, cast: false }));
+    for (const z of [-0.53, 0.53]) door.add(mesh(box(0.14, 2.2, 0.1), mat('#fbf7f0', { rough: 0.5 }), { y: 1.1, z, cast: false }));
+    door.add(mesh(rbox(0.7, 0.02, 1.0, 0.01), mat('#c9a66b', { rough: 1 }), { x: 0.4, y: 0.01, cast: false }));   // doormat
+    // a leash on a hook
+    door.add(mesh(cyl(0.012, 0.012, 0.9, 6), mat('#e07a5f', { rough: 0.6 }), { x: 0.09, y: 1.45, z: 0.8, cast: false }));
+    door.position.set(-ROOM_W / 2 + 0.1, 0, -1.7);
+    g.add(door);
+    this._doorLeaf = leaf;
+    this._doorOpen = 0; this._doorTarget = 0;
+    this._interactive(door, 'door', 0);
+    this.frontDoor = {
+      inside: new THREE.Vector3(cx - 2.85, 0, -1.45),
+      outside: new THREE.Vector3(cx - 4.9, 0, -1.7),
+      face: new THREE.Vector3(cx - 5, 0, -1.5),
+    };
   }
+
+  openDoor(open) { this._doorTarget = open ? 1 : 0; }
 
   _buildKitchen(room) {
     const { cx } = room;
@@ -412,7 +442,24 @@ export class House {
     litter.position.set(0.25, 0, -2.4);
     g.add(litter);
     this._interactive(litter, 'litter', room.index);
+    this._litterGroup = litter;
+
+    // Pee pad (shown instead of the litter box when the pet is a dog).
+    const pad = new THREE.Group();
+    pad.add(mesh(rbox(1.25, 0.02, 0.95, 0.01), mat('#ffffff', { map: T.tiles('#f4f9ff', '#d7e8fb', { size: 6, checker: false, grout: '#c3d9f2', repeat: [4, 3] }), rough: 0.9 }), { y: 0.012, cast: false }));
+    const stains = [];
+    const stainMat = new THREE.MeshStandardMaterial({ color: '#e8c95a', roughness: 0.9, transparent: true, opacity: 0.55 });
+    for (let i = 0; i < 4; i += 1) {
+      const st = mesh(new THREE.CircleGeometry(0.14 + i * 0.03, 16), stainMat, { x: -0.3 + i * 0.2, y: 0.026, z: -0.15 + (i % 2) * 0.25, rx: -Math.PI / 2, cast: false });
+      st.visible = false; pad.add(st); stains.push(st);
+    }
+    pad.position.set(0.25, 0, -2.2);
+    pad.visible = false;
+    g.add(pad);
+    this._interactive(pad, 'litter', room.index);
+    this._pad = { group: pad, stains };
     this.litterBox = { clumps, inside: new THREE.Vector3(cx + 0.25, 0.08, -2.4), front: new THREE.Vector3(cx + 0.25, 0, -1.25) };
+    this._catLitter = { ...this.litterBox };
     const mirror = new THREE.Group();
     mirror.add(mesh(rbox(0.95, 1.15, 0.05, 0.05), mat('#9ccfd8', { rough: 0.4 }), { cast: false }));
     // A believable mirror without a real reflection: pale glass with a sheen streak.
@@ -446,6 +493,7 @@ export class House {
     bed.add(mesh(rbox(0.5, 0.1, 0.35, 0.05), mat('#81b29a', { rough: 1 }), { x: 0.25, y: 0.2, z: -0.25, ry: 0.4 }));
     bed.position.set(-1.6, 0, -1.7);
     g.add(bed);
+    this._bed = bed;
     this._interactive(bed, 'bed', room.index);
 
     // Nightstand + lamp (interactive light switch)
@@ -600,6 +648,12 @@ export class House {
     }
     this.garlands.forEach((m, i) => { m.emissiveIntensity = (on ? 0.5 : 2.2) * (0.75 + 0.25 * Math.sin(t * 2 + i)); });
 
+    // Front door swings open/closed.
+    if (this._doorLeaf) {
+      this._doorOpen += (this._doorTarget - this._doorOpen) * Math.min(1, dt * 4);
+      this._doorLeaf.rotation.y = -this._doorOpen * 1.3;
+    }
+
     // Cat-tree toy swings
     if (this._treeToy) this._treeToy.position.x = 0.3 + Math.sin(t * 1.7) * 0.05;
 
@@ -638,10 +692,40 @@ export class House {
     w.position.y = 0.035 + 0.04 * (water / 100);
   }
 
-  /** dirt 0–100 → visible clumps in the litter box. */
+  /** dirt 0–100 → visible clumps in the litter box / stains on the pee pad. */
   setLitter(dirt) {
-    const n = Math.round((dirt / 100) * this.litterBox.clumps.length);
-    this.litterBox.clumps.forEach((c, i) => { c.visible = i < n; });
+    const list = this.species === 'dog' ? this._pad.stains : this._catLitter.clumps;
+    const n = Math.round((dirt / 100) * list.length);
+    list.forEach((c, i) => { c.visible = i < n; });
+  }
+
+  /**
+   * Furnish the house for the pet that lives here: litter box + cat tree for
+   * cats, a pee pad for dogs; the bed grows with the pet.
+   */
+  setSpecies(species, length = 1.55) {
+    this.species = species;
+    const dog = species === 'dog';
+    this._litterGroup.visible = !dog;
+    this.catTree.visible = !dog;                 // a dog has no use for it (and it hides the front door)
+    this._pad.group.visible = dog;
+    const cx = this.rooms[2].cx;
+    this.litterBox = dog
+      ? { clumps: this._pad.stains, inside: new THREE.Vector3(cx + 0.25, 0, -2.2), front: new THREE.Vector3(cx + 0.25, 0, -1.0) }
+      : { ...this._catLitter };
+    this._bed.scale.setScalar(Math.max(1, length / 1.55));
+  }
+
+  /** A puddle on the floor (dog accident). a = {x, z} or null. */
+  setAccident(a) {
+    if (!this._puddle) {
+      this._puddle = mesh(new THREE.CircleGeometry(0.32, 20), new THREE.MeshStandardMaterial({ color: '#e5c757', roughness: 0.05, transparent: true, opacity: 0.6 }), { rx: -Math.PI / 2, cast: false });
+      this._puddle.scale.set(1.3, 0.8, 1);
+      this.group.add(this._puddle);
+      this._interactive(this._puddle, 'puddle', 0);
+    }
+    this._puddle.visible = !!a;
+    if (a) this._puddle.position.set(a.x, 0.014, a.z);
   }
 
   toggleTap(on = !this.tap.on) { this.tap.on = on; return on; }

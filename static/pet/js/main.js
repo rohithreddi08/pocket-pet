@@ -1,38 +1,28 @@
 // ============================================================================
-// main.js — boots the app and wires world, cat, input and UI together.
-// You and the cat each have a room: the camera shows yours, the cat lives its
-// own life around the house (and usually follows you).
+// main.js — boots the app and wires world, pet, input and UI together.
+// You and your pet each have a room: the camera shows yours, the pet lives
+// its own life around the house (and usually follows you). You can own
+// several pets; one is at home on screen at a time.
 // ============================================================================
 import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-import { CatLoader } from '../../cat/CatLoader.js';
-import { mapBones, normalizeName } from '../../cat/BoneMap.js';
-import { PoseLayer } from '../../cat/PoseLayer.js';
-import { HeadTracker } from '../../cat/HeadTracker.js';
-import { Procedural } from '../../cat/Procedural.js';
+import { normalizeName } from '../../cat/BoneMap.js';
 import { House, ROOMS } from './world/House.js';
 import { Particles } from './world/Particles.js';
-import { Pet } from './pet/Pet.js';
 import { Accessories } from './pet/Accessories.js';
+import { buildPet, disposePet } from './pet/factory.js';
 import { Game, FOODS, THEMES } from './state.js';
+import { breedOf, pronoun } from './species.js';
 import { Sound, Voice, audioContext } from './audio.js';
 import { UI } from './ui/ui.js';
 import { $ } from './ui/dom.js';
 
-const MODEL_URLS = ['../cat/assets/cat_rigged.glb', '../cat/assets/cat.glb'];
 const HDR_URL = '../cat/assets/studio.hdr';
 
 const progress = (p, text) => {
   $('#loadBar').style.width = `${Math.round(p * 100)}%`;
   if (text) $('#loadingText').textContent = text;
 };
-
-async function firstExisting(urls) {
-  for (const u of urls) {
-    try { const r = await fetch(u, { method: 'HEAD' }); if (r.ok) return u; } catch { /* next */ }
-  }
-  return urls[urls.length - 1];
-}
 
 async function boot() {
   const game = new Game();
@@ -66,36 +56,53 @@ async function boot() {
     hdr.dispose(); pmrem.dispose();
   } catch (e) { console.warn('[pet] environment map failed; continuing without it', e); }
 
-  // -------------------------------------------------------------- cat
-  progress(0.35, 'Waking up your cat…');
-  const modelUrl = await firstExisting(MODEL_URLS);
-  const { root, rig, kind } = await CatLoader.load(modelUrl, scene, { targetLength: 1.55, facing: -Math.PI / 2 });
-  if (kind !== 'rigged') throw new Error('The cat model has no animations. Put a rigged, animated cat at static/cat/assets/cat_rigged.glb.');
-  progress(0.8, 'Almost there…');
-
-  const bones = mapBones(root);
-  const layer = new PoseLayer();
-  const tracker = bones.head ? new HeadTracker({ camera, headBone: bones.head, root, layer, maxAngle: 0.9 }) : null;
-  const procedural = new Procedural({
-    root, layer, chestBone: bones.chest, hipBone: bones.hip, earLBone: bones.earL, earRBone: bones.earR, tailBones: bones.tail,
-  });
-  const hats = new Accessories(root, bones.head);
-  hats.wear(game.s.hat);
   const applyTheme = (id) => house.applyTheme((THEMES[id] || THEMES.cream).walls);
   applyTheme(game.s.theme);
   game.on('theme', applyTheme);
 
-  const pet = new Pet({ root, rig, bones, layer, tracker, procedural, house, fx, sound, voice, game, camera });
-  game.on('hat', (id) => { hats.wear(id); if (id) setTimeout(() => pet.react('headshake'), 300); });
+  // -------------------------------------------------------------- the pet
+  // These are swapped when you switch pets (see spawnPet).
+  let built = null; let pet = null; let root = null; let bones = null; let tracker = null; let layer = null;
+  let hats = null;
+  const petMeshes = [];
+
+  async function spawnPet() {
+    const record = game.pet;
+    if (built) { pet.sound.purr(false); hats?.wear(null); disposePet(built, scene); }
+    built = await buildPet(record, { scene, camera, house, fx, sound, voice, game });
+    ({ pet, root, bones, tracker, layer } = built);
+    hats = new Accessories(root, bones.head);
+    hats.wear(game.s.hat);
+    petMeshes.length = 0;
+    root.traverse((o) => { if (o.isMesh) petMeshes.push(o); });
+    house.setSpecies(record.species, built.length);
+    house.setLitter(game.s.litter);
+    house.setAccident(game.s.accident);
+    syncBowls();
+    pet.onHint = showHint;
+    pet.setViewRoom(room);
+    ui?.petChanged();
+    window.pocketPet && Object.assign(window.pocketPet, { pet, rig: built.rig });
+    return pet;
+  }
+
+  progress(0.35, `Waking up ${game.s.name || 'your pet'}…`);
   let room = game.s.room || 0;
   house.focusRoom(room);
-  const syncBowls = () => house.setBowls(game.s.bowl.food, game.s.bowl.water, game.s.bowl.foodType);
-  syncBowls(); game.on('bowl', syncBowls);
-  house.setLitter(game.s.litter); game.on('litter', () => house.setLitter(game.s.litter));
+  const syncBowls = () => house.setBowls(game.s.bowl.food, game.s.bowl.water, game.s.bowl.foodType === 'kibble' || game.s.bowl.foodType === 'dkibble' ? 'kibble' : 'wet');
+  game.on('bowl', syncBowls);
+  game.on('litter', () => house.setLitter(game.s.litter));
+  game.on('accident', () => house.setAccident(game.s.accident));
+  game.on('hat', (id) => { hats?.wear(id); if (id) setTimeout(() => pet.react('headshake'), 300); });
+  let ui = null;
+  await spawnPet();
+  progress(0.8, 'Almost there…');
 
-  // Which part of the cat did we touch? (dominant bone of the hit triangle)
-  const catMeshes = [];
-  root.traverse((o) => { if (o.isMesh) catMeshes.push(o); });
+  const isDog = () => game.species === 'dog';
+  const name = () => game.s.name || 'Your pet';
+  const she = (k) => pronoun(game.pet, k);
+
+  // Which part of the pet did we touch? (dominant bone of the hit triangle)
   function regionOf(hit) {
     const o = hit.object;
     if (!o.isSkinnedMesh || !hit.face) return 'body';
@@ -148,7 +155,7 @@ async function boot() {
     laserOn = false; laserDot.visible = false;
   }
 
-  /** Bring the cat to the room you're in (if it's willing), then do something. */
+  /** Bring the pet to the room you're in (if it's willing), then do something. */
   function summon(then, speed = 1.3) {
     if (pet.room === room && !pet.travelling) { then(); return; }
     pet.interrupt(true);
@@ -156,30 +163,43 @@ async function boot() {
   }
 
   const hintSeen = new Map();
-  pet.onHint = (msg) => {
+  function showHint(msg) {
     const last = hintSeen.get(msg) || 0;
     if (Date.now() - last < 90000) return;
     hintSeen.set(msg, Date.now());
     ui.hint(msg);
-  };
+  }
 
   const actions = {
     go: (d) => goRoom(room + d),
     goto: (i) => goRoom(i),
     celebrate: () => pet.celebrate(),
+    species: () => game.species,
     fillBowl: (id) => {
       if (game.s.bowl.food > 70) { ui.toast('The bowl is still full'); return; }
       if (game.fillBowl(id)) {
         sound.pop();
-        ui.toast(`${FOODS[id].icon} Bowl filled — ${game.s.name} will eat when hungry`);
+        ui.toast(`${FOODS[id].icon} Bowl filled — ${name()} will eat when hungry`);
         game.addXp(2);
       }
+    },
+    serveMeal: (mealId, grams) => {
+      const r = game.serveMeal(mealId, grams);
+      if (!r.ok) { ui.toast(r.why); return r; }
+      sound.pop();
+      game.addXp(3);
+      const verdict = r.ratio > 1.3 ? ' — that\'s more than one meal; overfeeding leads to weight gain.'
+        : r.ratio < 0.7 ? ' — a bit small for a full meal.' : ' — a well-sized portion.';
+      ui.toast(`🍲 ${r.grams} g of home-cooked food in the bowl${verdict}`, 'big');
+      if (!pet.outside && !pet.sleeping && game.needs.food < 90) setTimeout(() => { if (!pet.act || pet.act.interruptible) { pet.interrupt(); pet._startBowl('food'); } }, 1200);
+      return r;
     },
     refillWater: () => { game.refillWater(); sound.pop(); ui.toast('💧 Fresh water'); game.addXp(1); },
     treat: (id) => {
       const f = FOODS[id];
+      if (pet.outside) { ui.toast(`${name()} is out`); return; }
       if (f.kind === 'treat' && game.treatsLeftToday() <= 0) {
-        ui.toast('That\'s enough treats for today — treats should stay a small part of a cat\'s diet.');
+        ui.toast(`That's enough treats for today — treats should stay under ~10% of a ${isDog() ? 'dog' : 'cat'}'s diet.`);
         if (pet.inView) pet.refuse();
         return;
       }
@@ -197,8 +217,8 @@ async function boot() {
           setTimeout(() => pet.eatTreat(f), 500);
         }
       });
-      if (!ok) ui.toast(`${game.s.name} is fast asleep 😴`);
-      else if (pet.room !== room) ui.toast(`🔔 ${game.s.name} heard the treat bag…`);
+      if (!ok) ui.toast(`${name()} is fast asleep 😴`);
+      else if (pet.room !== room) ui.toast(`🔔 ${name()} heard the treat bag…`);
     },
     throwBall: () => {
       if (room !== 0) return;
@@ -209,18 +229,21 @@ async function boot() {
       house.kickBall(away, 2.8);
       sound.boing();
       ballPlay = 18;
-      if (pet.sleeping && game.bond < 30) { ui.toast(`${game.s.name} opens one eye… and goes back to sleep.`); return; }
+      if (pet.outside) return;
+      if (pet.sleeping && game.bond < 30) { ui.toast(`${name()} opens one eye… and goes back to sleep.`); return; }
+      if (pet.act?.id === 'toy') pet._endAct();
       summon(() => {
         pet.startChase(() => (b.held ? null : b.mesh.position), () => {
-          game.addNeed('play', 5); game.addNeed('energy', -1.5); game.addXp(1);
-          // Somalis love to fetch.
-          if (game.bond > 40 && Math.random() < 0.45) {
+          game.addNeed('play', isDog() ? 7 : 5); game.addNeed('energy', -1.5); game.addXp(1);
+          // Somalis often fetch; most dogs live for it (independent breeds less so).
+          const fetchP = isDog() ? Math.min(0.92, 0.45 + game.bond / 200) * (pet.traits.independent > 0.8 ? 0.6 : 1) : (game.bond > 40 ? 0.45 : 0);
+          if (Math.random() < fetchP) {
             b.held = true; b.vel.set(0, 0, 0);
             pet.fetch(b.mesh, () => {
               b.held = false;
-              b.mesh.position.y = 0.2;
+              b.mesh.position.y = b.r;
               house.kickBall(camera.position.clone().sub(b.mesh.position).setY(0), 0.8);
-              ui.toast(`${game.s.name} brought the ball back! Tap it to throw again.`);
+              ui.toast(`${name()} brought the ball back! Tap it to throw again.`);
               game.addBond(0.5);
             });
             ballPlay = 0;
@@ -229,7 +252,7 @@ async function boot() {
             dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 1.2);
             house.kickBall(dir, 2.2 + Math.random() * 1.2);
           }
-        }, 0.75, 1.5);
+        }, pet.len * 0.45, 1.5 * Math.sqrt(pet.len / 1.55));
       });
     },
     toggleLights: () => {
@@ -239,17 +262,22 @@ async function boot() {
       pet.lightsChanged(room, r.lightsOn);
     },
     scoop: () => {
-      if (game.scoop()) { sound.squish(); ui.toast('🧹 Litter box scooped — do this daily'); }
-      else ui.toast('The litter box is already clean ✨');
+      if (game.scoop()) { sound.squish(); ui.toast(isDog() ? '🧻 Fresh pee pad down' : '🧹 Litter box scooped — do this daily'); }
+      else ui.toast(isDog() ? 'The pad is clean ✨' : 'The litter box is already clean ✨');
     },
     toggleTap: () => {
       const on = house.toggleTap();
       sound.click();
-      if (on && pet.room === 2 && !pet.sleeping) pet.interrupt();
+      if (on && pet.room === 2 && !pet.sleeping && !isDog()) pet.interrupt();
       ui.toast(on ? '🚰 Tap dripping — Somalis are famously fascinated by water' : 'Tap off');
     },
     slowBlink: () => {
-      if (pet.slowBlink() === 'away') ui.toast(pet.sleeping ? `${game.s.name} is asleep` : `${game.s.name} isn't in this room`);
+      if (isDog()) {
+        const r = pet.call();
+        ui.toast(r === 'ok' ? `📣 “${name()}, come!”` : r === 'ignored' ? `📣 ${name()} heard you… and decided to think about it. Practise “Come” in training.` : r === 'away' ? `${name()} is out` : `${name()} is fast asleep`);
+        return;
+      }
+      if (pet.slowBlink() === 'away') ui.toast(pet.sleeping ? `${name()} is asleep` : `${name()} isn't in this room`);
       else ui.toast('😌 You slowly blink…');
     },
     toggleTalk: async () => {
@@ -261,8 +289,8 @@ async function boot() {
         voice.parrot = game.s.settings.parrot;
         await voice.enable();
         ui.toast(voice.parrot
-          ? `🎙️ Say something — ${game.s.name} will repeat it!`
-          : `🎙️ Talk to ${game.s.name} — cats recognise their person's voice`, 'big');
+          ? `🎙️ Say something — ${name()} will repeat it!`
+          : `🎙️ Talk to ${name()} — pets recognise their person's voice`, 'big');
       } catch (e) {
         const inFrame = window.self !== window.top;
         ui.toast(inFrame
@@ -274,15 +302,49 @@ async function boot() {
     startFocus: (minutes) => {
       focus = { endsAt: Date.now() + minutes * 60000, minutes };
       ui.showFocus(focus.endsAt, () => endFocus(false));
-      // A cat keeps you company by napping nearby.
       pet.interrupt(true);
       pet._startNap(room);
-      ui.toast(`Focus for ${minutes} min — ${game.s.name} will nap nearby 📚`, 'big');
+      ui.toast(`Focus for ${minutes} min — ${name()} will nap nearby 📚`, 'big');
     },
-    onTool: (name) => {
-      if (name !== 'laser') { laserOn = false; laserDot.visible = false; if (!ballPlay && pet.act?.id === 'play') pet.stopChase(); }
-      if (name !== 'shower') stopShower();
+    onTool: (tool) => {
+      if (tool !== 'laser') { laserOn = false; laserDot.visible = false; if (!ballPlay && pet.act?.id === 'play') pet.stopChase(); }
+      if (tool !== 'shower') stopShower();
     },
+    // --- several pets ---------------------------------------------------------
+    switchPet: async (id) => {
+      if (!game.switchPet(id)) return;
+      $('#loading').classList.remove('done');
+      progress(0.5, `Bringing ${name()} home…`);
+      stopPlay(); endFocus(false);
+      if (ui.walk) { ui.walk = null; $('#sheetClose').hidden = false; }
+      await spawnPet();
+      progress(1, 'Ready!');
+      setTimeout(() => $('#loading').classList.add('done'), 200);
+      setTimeout(() => pet.greet(), 600);
+    },
+    // --- dogs -------------------------------------------------------------------
+    startWalk: (onGone) => {
+      goRoom(0);
+      pet.goOut(onGone);
+    },
+    endWalk: (onBack) => {
+      goRoom(0);
+      pet.comeHome(onBack);
+    },
+    trick: (id, done) => {
+      if (!isDog()) return false;
+      summon(() => pet.doTrick(id, done));
+      return true;
+    },
+    cleanPuddle: () => {
+      if (!game.s.accident) return;
+      game.setAccident(null);
+      sound.squish(); sound.sparkle();
+      game.addXp(2);
+      ui.toast('🧽 Cleaned with an enzyme cleaner — it removes the smell so it doesn\'t happen in the same spot again.');
+    },
+    cooking: () => { if (!pet.sleeping && !pet.outside) pet.beg(); },
+    sizzle: (on) => sound.sizzle(on),
   };
 
   function endFocus(completed) {
@@ -310,7 +372,7 @@ async function boot() {
     pet.shakeOff();
   }
 
-  // Food arcing from your hand to the cat's mouth.
+  // Food arcing from your hand to the pet's mouth.
   const flying = [];
   function flyFood(icon) {
     const c = document.createElement('canvas'); c.width = c.height = 128;
@@ -323,7 +385,7 @@ async function boot() {
     flying.push({ s, from: camera.position.clone().add(new THREE.Vector3(0, -1.2, -1.5)), t: 0 });
   }
 
-  const ui = new UI({ game, sound, actions });
+  ui = new UI({ game, sound, actions });
   ui.setRoom(room);
   voice.onState = (st) => ui.setTalk(st);
   voice.onHeard = () => pet.heard();
@@ -333,7 +395,7 @@ async function boot() {
     voice.sensitivity = game.s.settings.micSensitivity;
     voice.parrot = game.s.settings.parrot;
   });
-  game.on('reset', () => { hats.wear(null); applyTheme('cream'); pet.wake(false); syncBowls(); house.setLitter(game.s.litter); });
+  game.on('reset', async () => { applyTheme('cream'); await spawnPet(); });
 
   // -------------------------------------------------------------- input
   const ray = new THREE.Raycaster();
@@ -345,21 +407,21 @@ async function boot() {
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    return ray.intersectObjects(targets, false)[0] || null;
+    return ray.intersectObjects(targets.filter((m) => m.visible && m.parent?.visible !== false), false)[0] || null;
   }
 
   let down = null;
   canvas.addEventListener('pointerdown', (e) => {
     audioContext();
     canvas.setPointerCapture(e.pointerId);
-    const catHit = cast(e, catMeshes);
-    const itemHit = catHit ? null : cast(e, interactiveMeshes);
-    down = { x: e.clientX, y: e.clientY, t: performance.now(), catHit, itemHit, moved: 0, stroking: false, last: performance.now() };
+    const petHit = pet.outside ? null : cast(e, petMeshes);
+    const itemHit = petHit ? null : cast(e, interactiveMeshes);
+    down = { x: e.clientX, y: e.clientY, t: performance.now(), catHit: petHit, itemHit, moved: 0, stroking: false, last: performance.now() };
     if (ui.tool === 'laser') {
       const f = cast(e, house.floors);
       if (f) setLaser(f.point);
     } else if (ui.tool === 'shower') {
-      if (!pet.inView) { ui.toast(`${game.s.name} isn't here`); return; }
+      if (!pet.inView) { ui.toast(`${name()} isn't here`); return; }
       showering = true; showerHead.visible = true; sound.shower(true);
       pet.interrupt(true); pet.stop(); pet.sitting = false;
     }
@@ -379,7 +441,7 @@ async function boot() {
       if (f) setLaser(f.point);
       return;
     }
-    const hit = (ui.tool || down.catHit) ? cast(e, catMeshes) : null;
+    const hit = (ui.tool || down.catHit) ? cast(e, petMeshes) : null;
     if (ui.tool === 'sponge') {
       if (hit && (down.lastScrub || 0) + 50 < now) {
         down.lastScrub = now;
@@ -413,7 +475,9 @@ async function boot() {
     if (d.moved > 12 || d.stroking) return;
     if (d.catHit) {
       const res = pet.touch(regionOf(d.catHit));
-      if (res === 'shy') ui.hint(`${game.s.name} is still shy. Build trust with slow blinks 😌, meals and gentle head scratches.`);
+      if (res === 'shy') ui.hint(isDog()
+        ? `${name()} is still nervous. Let ${she('obj')} come to you; gentle chin scratches, treats and walks build trust.`
+        : `${name()} is still shy. Build trust with slow blinks 😌, meals and gentle head scratches.`);
     } else if (d.itemHit) {
       onItem(d.itemHit.object.userData.interactive);
     }
@@ -428,7 +492,9 @@ async function boot() {
     else if (id === 'lamp') actions.toggleLights();
     else if (id === 'litter') actions.scoop();
     else if (id === 'tap') actions.toggleTap();
-    else if (id === 'bed') ui.toast('Cats nap when *they* decide to 😼');
+    else if (id === 'puddle') actions.cleanPuddle();
+    else if (id === 'door') { if (isDog()) ui.openWalk(); else ui.toast('Indoor cats are safest indoors 🏠'); }
+    else if (id === 'bed') ui.toast(isDog() ? 'Dogs pick their own nap time too 🐕' : 'Cats nap when *they* decide to 😼');
     else if (id === 'duck') {
       sound.boing(); sound.pop();
       house.duck.userData.squeak = 0.5;
@@ -479,7 +545,7 @@ async function boot() {
 
   if (game.offlineHours > 0.5 && game.s.name) {
     setTimeout(() => {
-      ui.toast(`${game.s.name} missed you! (away ${Math.round(game.offlineHours)}h)`, 'big');
+      ui.toast(`${name()} missed you! (away ${Math.round(game.offlineHours)}h)`, 'big');
       pet.greet();
     }, 1500);
   }
@@ -488,7 +554,7 @@ async function boot() {
     const dt = Math.min(clock.getDelta(), 0.1);
     elapsed += dt;
 
-    game.tick(dt, { focus: !!focus, asleep: pet.sleeping });
+    game.tick(dt, { focus: !!focus, asleep: pet.sleeping, out: pet.outside });
     if (focus && Date.now() >= focus.endsAt) endFocus(true);
 
     if (ballPlay > 0) {
@@ -502,7 +568,9 @@ async function boot() {
         game.addNeed('groom', 15); game.count('washed'); game.addXp(3);
         sound.sparkle();
         ui.setTool(null);
-        ui.toast(`${game.s.name} is clean — though most cats only need a bath rarely; brushing is what a Somali's coat really needs.`, 'big');
+        ui.toast(isDog()
+          ? `${name()} is clean! Dogs need a bath every month or so (or when muddy) — too often dries the skin.`
+          : `${name()} is clean — though most cats only need a bath rarely; brushing is what a long coat really needs.`, 'big');
       }
     }
     if (house.duck.userData.squeak > 0) {
@@ -535,11 +603,11 @@ async function boot() {
     camera.position.set(camX + parallax.x * 0.25, (portrait ? 1.55 : 1.75) + parallax.y * 0.1, camDist);
     camera.lookAt(camX, portrait ? 0.85 : 0.95, 0);
 
-    // Thought bubble over the head when a need is low and the cat is here.
+    // Thought bubble over the head when a need is low and the pet is here.
     const mood = game.mood();
-    const lowIcon = { food: '🍗', water: '💧', energy: '😴', play: '🧶', groom: '🪮', litter: '🚽' }[mood.low[0]];
+    const lowIcon = { food: '🍗', water: '💧', energy: '😴', play: isDog() ? '🦮' : '🧶', groom: '🪮', litter: isDog() ? '🧻' : '🚽', walk: '🚪' }[mood.low[0]];
     if (lowIcon && pet.inView && !pet.sleeping && !pet.reactions.length) {
-      pet.headPosition(headV).add(new THREE.Vector3(0, 0.55, 0)).project(camera);
+      pet.headPosition(headV).add(new THREE.Vector3(0, 0.3 + pet.len * 0.15, 0)).project(camera);
       ui.thought(lowIcon, (headV.x * 0.5 + 0.5) * window.innerWidth, (-headV.y * 0.5 + 0.5) * window.innerHeight);
     } else {
       ui.thought(null);
@@ -560,18 +628,18 @@ async function boot() {
   requestAnimationFrame(frame);
 
   if (!game.s.name) {
-    ui.askName((name) => {
+    ui.askName((n) => {
       audioContext();
       sound.chirp(2);
       pet.greet();
-      ui.toast(`Welcome home, ${name}! 🏡`, 'big');
-      setTimeout(() => ui.hint(`${name} is a Somali — curious, very active and a little independent. Open the 📖 guide to learn her body language.`), 3500);
+      ui.toast(`Welcome home, ${n}! 🏡`, 'big');
+      setTimeout(() => ui.hint(`${n} is a ${breedOf(game.pet).name} — curious, very active and a little independent. Tap your profile (top left) for the 🏪 Pet Store — your first adoption is free.`), 3500);
     });
   }
 
   document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); });
   window.addEventListener('pagehide', () => game.save());
-  window.pocketPet = { game, pet, house, rig, voice, scene, camera };
+  window.pocketPet = { game, pet, house, rig: built.rig, voice, scene, camera, actions, ui, get current() { return pet; } };
 }
 
 boot().catch((e) => {

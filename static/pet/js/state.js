@@ -1,43 +1,68 @@
 // ============================================================================
 // state.js — the save file, needs simulation and economy.
 // ----------------------------------------------------------------------------
-// Modelled on real cat care (see the Care Guide sheet for sources):
-//   needs   food, water, energy, play, groom   (0–100, good when high)
-//   bond    trust between you and the cat; grows with gentle, consistent care
-//   bowls   meals go in the food bowl, water in the water bowl — the cat eats
-//           and drinks by itself when it needs to, like a real cat
-//   litter  the box gets used and needs scooping daily
-// Energy follows a real cat's rhythm: many short naps adding up to ~14 h/day.
-// Everything keeps going (gently) while the app is closed, capped at 12 h.
+// A profile (you: coins, level, groceries, fridge, settings) owns several
+// pets. One pet is "on screen" at a time; the others keep living their lives
+// in the background (they eat from their bowls, nap, use the litter box /
+// pee pad) and you can switch to them from your profile.
+//
+// Needs (0–100, good when high): food, water, energy, play (exercise for
+// dogs), groom. Bond = trust, built with gentle, consistent care.
+// Rates depend on species, life stage (kittens/puppies eat, play and sleep
+// more; seniors slow down) and breed (long coats need more brushing).
+// Everything keeps going while the app is closed, capped at 12 h.
 // ============================================================================
+import { BREEDS, SPECIES, PERSONALITIES, breedOf, lifeStage, newPetFrom, dailyKcal, mealsPerDay } from './species.js';
 
 const KEY = 'pocketpet.save.v1';
-
-// Per real hour.
-const RATES = { food: -7, water: -9, play: -10, groom: -2.5 };
-const AWAKE_ENERGY = -18;      // with SLEEP_ENERGY this balances at ~14 h sleep a day
-const SLEEP_ENERGY = 22;
-const LITTER_PER_VISIT = 22;
 const MAX_OFFLINE_HOURS = 12;
+export const MAX_PETS = 4;
 
-export const NEEDS = [
-  { id: 'food',   icon: '🍗', label: 'Food' },
-  { id: 'water',  icon: '💧', label: 'Water' },
-  { id: 'energy', icon: '⚡', label: 'Energy' },
-  { id: 'play',   icon: '🧶', label: 'Play' },
-  { id: 'groom',  icon: '🪮', label: 'Grooming' },
-];
+// Per real hour, for an adult.
+const RATES = {
+  cat: { food: -7, water: -9, play: -10, groom: -2.5, awake: -18, sleep: 22 },
+  dog: { food: -6, water: -9, play: -12, groom: -2, awake: -20, sleep: 24 },
+};
+const STAGE = {              // multipliers per life stage
+  baby:   { food: 1.5, play: 1.4, awake: 1.45 },
+  young:  { food: 1.2, play: 1.2, awake: 1.1 },
+  adult:  {},
+  senior: { food: 0.9, play: 0.7, awake: 1.3 },
+};
+const LITTER_PER_VISIT = 22;
 
-// meal: goes in the bowl (portion = how much of the bowl it fills)
-// treat: hand-fed; only a few a day are healthy
+const NEED_DEFS = {
+  food:   { id: 'food',   icon: '🍗', label: 'Food' },
+  water:  { id: 'water',  icon: '💧', label: 'Water' },
+  energy: { id: 'energy', icon: '⚡', label: 'Energy' },
+  play:   { id: 'play',   icon: '🧶', label: 'Play' },
+  groom:  { id: 'groom',  icon: '🪮', label: 'Grooming' },
+};
+export const NEEDS = Object.values(NEED_DEFS);
+export function needsFor(species) {
+  if (species === 'dog') return NEEDS.map((n) => (n.id === 'play' ? { ...n, icon: '🦮', label: 'Exercise & play' } : n));
+  return NEEDS;
+}
+
+// Store-bought food. meal: goes in the bowl (portion = % of the bowl it fills)
+// treat: hand-fed; only a few a day are healthy.
 export const FOODS = {
-  wet:     { name: 'Wet food',       icon: '🥫', price: 6,  kind: 'meal',  portion: 60, food: 45, like: 'love' },
-  kibble:  { name: 'Dry kibble',     icon: '🥣', price: 4,  kind: 'meal',  portion: 70, food: 40, like: 'like' },
-  chicken: { name: 'Plain chicken',  icon: '🍗', price: 8,  kind: 'treat', food: 12, play: 2, like: 'love' },
-  salmon:  { name: 'Cooked salmon',  icon: '🐟', price: 9,  kind: 'treat', food: 10, play: 2, like: 'love' },
-  treats:  { name: 'Cat treats',     icon: '🍪', price: 3,  kind: 'treat', food: 4,  play: 4, like: 'love' },
-  catnip:  { name: 'Catnip',         icon: '🌿', price: 7,  kind: 'catnip', play: 25 },
-  grass:   { name: 'Cat grass',      icon: '🌱', price: 4,  kind: 'treat', food: 2,  play: 3, like: 'like' },
+  // cats
+  wet:     { species: 'cat', name: 'Cat wet food',  icon: '🥫', price: 6,  kind: 'meal',  portion: 60, like: 'love' },
+  kibble:  { species: 'cat', name: 'Cat kibble',    icon: '🥣', price: 4,  kind: 'meal',  portion: 70, like: 'like' },
+  chicken: { species: 'cat', name: 'Plain chicken', icon: '🍗', price: 8,  kind: 'treat', food: 12, play: 2, like: 'love' },
+  salmon:  { species: 'cat', name: 'Cooked salmon', icon: '🐟', price: 9,  kind: 'treat', food: 10, play: 2, like: 'love' },
+  treats:  { species: 'cat', name: 'Cat treats',    icon: '🍪', price: 3,  kind: 'treat', food: 4,  play: 4, like: 'love' },
+  catnip:  { species: 'cat', name: 'Catnip',        icon: '🌿', price: 7,  kind: 'catnip', play: 25 },
+  grass:   { species: 'cat', name: 'Cat grass',     icon: '🌱', price: 4,  kind: 'treat', food: 2,  play: 3, like: 'like' },
+  // dogs
+  dwet:    { species: 'dog', name: 'Dog wet food',  icon: '🥫', price: 7,  kind: 'meal',  portion: 60, like: 'love' },
+  dkibble: { species: 'dog', name: 'Dog kibble',    icon: '🥣', price: 5,  kind: 'meal',  portion: 70, like: 'like' },
+  biscuit: { species: 'dog', name: 'Dog biscuits',  icon: '🦴', price: 3,  kind: 'treat', food: 4,  play: 3, like: 'love' },
+  chew:    { species: 'dog', name: 'Dental chew',   icon: '🪵', price: 6,  kind: 'treat', food: 6,  play: 8, groom: 4, like: 'love' },
+  pbutter: { species: 'dog', name: 'Peanut butter (xylitol-free)', icon: '🥜', price: 5, kind: 'treat', food: 5, play: 4, like: 'love' },
+  carrot:  { species: 'dog', name: 'Carrot sticks', icon: '🥕', price: 2,  kind: 'treat', food: 2,  play: 2, like: 'like' },
+  bites:   { species: 'dog', name: 'Home-made pumpkin bites', icon: '🍪', price: 0, kind: 'treat', food: 4, play: 4, like: 'love', homemade: true },
 };
 export const TREATS_PER_DAY = 5;
 
@@ -61,57 +86,115 @@ export const THEMES = {
 export function xpToNext(level) { return 40 + level * 40; }
 
 function clamp(v, lo = 0, hi = 100) { return Math.max(lo, Math.min(hi, v)); }
-function today() { return new Date().toISOString().slice(0, 10); }
+export function today() { return new Date().toISOString().slice(0, 10); }
 
 /** 0..1: how active a cat tends to be at this hour (crepuscular: dawn + dusk peaks). */
-export function activityAt(hour) {
+export function activityAt(hour, species = 'cat') {
   const peak = (h, c, w) => {
     const d = ((h - c + 36) % 24) - 12;          // signed hours from c, wrapped to [-12, 12)
     return Math.exp(-(d * d) / (2 * w * w));
   };
+  if (species === 'dog') {
+    // Dogs fit their people's day: up in the morning and evening, sleep at night.
+    const night = hour < 6 || hour >= 23;
+    return night ? 0.15 : Math.min(1, 0.45 + 0.55 * Math.max(peak(hour, 7.5, 1.8), peak(hour, 18.5, 2.2)));
+  }
   return Math.min(1, 0.3 + 0.7 * Math.max(peak(hour, 6.5, 1.6), peak(hour, 19, 2)));
 }
 
-function defaultSave() {
+// Keys that belong to you (the profile); everything else belongs to a pet.
+const SHARED = new Set(['v', 'pets', 'activeId', 'createdAt', 'coins', 'xp', 'level', 'inventory', 'pantry', 'meals',
+  'cooking', 'hats', 'themes', 'theme', 'room', 'daily', 'best', 'settings', 'adopted', 'firstAdoptFree']);
+
+function defaultPet(over = {}) {
   return {
-    v: 2,
+    id: 'p1', species: 'cat', breed: 'somali', coat: 'ruddy', sex: 'female', personality: 'playful',
+    ageAtAdoption: 24, adoptedAt: Date.now(),
     name: null,
-    createdAt: Date.now(),
     lastTick: Date.now(),
     needs: { food: 70, water: 80, energy: 80, play: 60, groom: 85 },
     bond: 25,
     asleep: false,
-    bowl: { food: 0, foodType: null, water: 70 },
-    litter: 10,                        // how dirty the box is
-    bladder: 45,                       // minutes until the next litter-box visit
+    bowl: { food: 0, foodType: null, water: 70, quality: 0 },
+    litter: 10,                        // litter box (cats) / pee pad (dogs): how dirty
+    bladder: 45,                       // minutes until the next toilet trip
     treats: { day: today(), count: 0 },
+    hat: null,
+    catRoom: 0,                        // where the pet is
+    out: false,                        // dog out on a walk
+    accident: null,                    // {x, z, room} puddle to clean up
+    tricks: {},                        // dog training progress 0–100
+    training: { day: today(), minutes: 0 },
+    walks: { day: today(), count: 0, minutes: 0 },
+    stats: { fed: 0, petted: 0, brushed: 0, washed: 0, slept: 0, talked: 0, games: 0, focusMin: 0, scooped: 0, blinks: 0, cooked: 0, walks: 0 },
+    ...over,
+  };
+}
+
+function defaultProfile() {
+  return {
+    v: 3,
+    createdAt: Date.now(),
+    pets: [defaultPet()],
+    activeId: 'p1',
     coins: 60,
     xp: 0,
     level: 1,
     inventory: { wet: 3, kibble: 3, treats: 3, chicken: 1 },
+    pantry: { chicken: 1, pumpkin: 1, catvit: 1 },
+    meals: [],                         // home-cooked portions in the fridge
+    cooking: null,                     // a recipe in progress
     hats: [],
-    hat: null,
     themes: ['cream'],
     theme: 'cream',
     room: 0,                           // where YOU are looking
-    catRoom: 0,                        // where the cat is
     daily: { last: null, streak: 0 },
-    stats: { fed: 0, petted: 0, brushed: 0, washed: 0, slept: 0, talked: 0, games: 0, focusMin: 0, scooped: 0, blinks: 0 },
     best: { memory: 0, catch: 0 },
+    adopted: [],                       // store listing ids already adopted
+    firstAdoptFree: true,
     settings: { sound: true, voicePitch: 1.6, micSensitivity: 0.5, parrot: false },
   };
 }
 
-function migrate(data, base) {
+/** v1/v2 (single cat, flat) → v3 (profile + pets). */
+function migrate(data) {
   if (!data.v || data.v < 2) {
-    // v1 → v2: fun→play, clean→groom, new needs, cat-safe food only.
     const n = data.needs || {};
     data.needs = { food: n.food ?? 70, water: 80, energy: n.energy ?? 80, play: n.fun ?? 60, groom: n.clean ?? 85 };
-    data.inventory = { ...base.inventory };
+    data.inventory = { wet: 3, kibble: 3, treats: 3, chicken: 1 };
     data.catRoom = data.room ?? 0;
     data.v = 2;
   }
+  if (data.v === 2) {
+    const base = defaultProfile();
+    const profile = { ...base };
+    const pet = defaultPet({ ageAtAdoption: 24, adoptedAt: data.createdAt || Date.now() });
+    for (const [k, v] of Object.entries(data)) {
+      if (SHARED.has(k)) profile[k] = v;
+      else pet[k] = v;
+    }
+    pet.id = 'p1';
+    profile.pets = [pet];
+    profile.activeId = 'p1';
+    profile.v = 3;
+    profile.pantry = { ...base.pantry, ...(data.pantry || {}) };
+    return profile;
+  }
   return data;
+}
+
+function normalizePet(p) {
+  const d = defaultPet();
+  return {
+    ...d, ...p,
+    needs: { ...d.needs, ...p.needs },
+    bowl: { ...d.bowl, ...p.bowl },
+    treats: { ...d.treats, ...p.treats },
+    training: { ...d.training, ...p.training },
+    walks: { ...d.walks, ...p.walks },
+    stats: { ...d.stats, ...p.stats },
+    tricks: { ...p.tricks },
+  };
 }
 
 class Emitter {
@@ -124,154 +207,301 @@ class Emitter {
 export class Game extends Emitter {
   constructor() {
     super();
-    this.s = this._load();
-    this._catchUp();
+    this.p = this._load();
+    this._bind();
+    this.offlineHours = this._catchUp(this.pet);
+    for (const other of this.p.pets) if (other !== this.pet) this._catchUp(other);
     this._saveTimer = 0;
+    this._othersTimer = 0;
   }
 
   // ---------------------------------------------------------------- persistence
   _load() {
-    const base = defaultSave();
+    const base = defaultProfile();
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return base;
-      const data = migrate(JSON.parse(raw), base);
+      const data = migrate(JSON.parse(raw));
       const inv = {};
       for (const [k, v] of Object.entries(data.inventory || {})) if (FOODS[k]) inv[k] = v;
-      return {
+      const p = {
         ...base, ...data,
-        needs: { ...base.needs, ...data.needs },
-        bowl: { ...base.bowl, ...data.bowl },
-        treats: { ...base.treats, ...data.treats },
         inventory: inv,
+        pantry: { ...data.pantry },
+        meals: Array.isArray(data.meals) ? data.meals : [],
         daily: { ...base.daily, ...data.daily },
-        stats: { ...base.stats, ...data.stats },
         best: { ...base.best, ...data.best },
         settings: { ...base.settings, ...data.settings },
+        pets: (data.pets?.length ? data.pets : base.pets).map(normalizePet),
       };
-    } catch {
+      if (!p.pets.some((x) => x.id === p.activeId)) p.activeId = p.pets[0].id;
+      return p;
+    } catch (e) {
+      console.warn('[state] save unreadable, starting fresh', e);
       return base;
     }
   }
 
+  /** `game.s` reads/writes the active pet, or the profile for shared keys. */
+  _bind() {
+    this.pet = this.p.pets.find((x) => x.id === this.p.activeId) || this.p.pets[0];
+    const prof = this.p; const pet = this.pet;
+    this.s = new Proxy({}, {
+      get: (_, k) => (SHARED.has(k) ? prof[k] : pet[k]),
+      set: (_, k, v) => { (SHARED.has(k) ? prof : pet)[k] = v; return true; },
+      has: (_, k) => k in prof || k in pet,
+      ownKeys: () => [...new Set([...Object.keys(prof), ...Object.keys(pet)])],
+      getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+    });
+  }
+
   save() {
-    try { localStorage.setItem(KEY, JSON.stringify(this.s)); } catch { /* private mode etc. */ }
+    try { localStorage.setItem(KEY, JSON.stringify(this.p)); } catch { /* private mode etc. */ }
   }
 
   reset() {
-    const name = this.s.name;
-    this.s = defaultSave();
-    this.s.name = name;
+    const name = this.pet.name;
+    this.p = defaultProfile();
+    this.p.pets[0].name = name;
+    this._bind();
     this.save();
     this.emit('reset');
+    this.emit('pet');
     this.emit('change');
   }
 
-  /** While you were away the cat lived its life: napped, ate and drank from its bowls, used the box. */
-  _catchUp() {
-    const hours = Math.min(MAX_OFFLINE_HOURS, Math.max(0, (Date.now() - this.s.lastTick) / 3.6e6));
-    this.offlineHours = hours;
-    this.s.lastTick = Date.now();
-    if (hours < 0.02) return;
-    const n = this.s.needs; const b = this.s.bowl;
-    n.food = clamp(n.food + RATES.food * hours);
-    n.water = clamp(n.water + RATES.water * hours);
+  // ---------------------------------------------------------------- pets
+  get species() { return this.pet.species; }
+  get breed() { return breedOf(this.pet); }
+  get stage() { return lifeStage(this.pet); }
+  get pets() { return this.p.pets; }
+  traits() {
+    const b = this.breed.traits; const p = PERSONALITIES[this.pet.personality] || PERSONALITIES.calm;
+    return { ...b, play: p.play, follow: p.follow, vocal: b.vocal * p.vocal };
+  }
+
+  _rates(pet) {
+    const r = RATES[pet.species] || RATES.cat;
+    const m = STAGE[lifeStage(pet)];
+    const b = breedOf(pet);
+    const pers = PERSONALITIES[pet.personality] || PERSONALITIES.calm;
+    return {
+      food: r.food * (m.food || 1),
+      water: r.water,
+      play: r.play * (m.play || 1) * (0.6 + 0.4 * b.traits.energy / 0.8) * pers.play,
+      groom: r.groom * (b.groomRate || 1),
+      awake: r.awake * (m.awake || 1),
+      sleep: r.sleep,
+    };
+  }
+
+  canAdopt(listing) {
+    if (this.p.pets.length >= MAX_PETS) return { ok: false, why: `Your home has room for ${MAX_PETS} pets — that's already a full house!` };
+    if (this.p.adopted.includes(listing.id)) return { ok: false, why: 'Already adopted' };
+    const price = this.p.firstAdoptFree ? 0 : listing.price;
+    if (this.p.coins < price) return { ok: false, why: 'Not enough coins' };
+    return { ok: true, price };
+  }
+
+  adopt(listing, name) {
+    const can = this.canAdopt(listing);
+    if (!can.ok) return can;
+    this.p.coins -= can.price;
+    this.p.firstAdoptFree = false;
+    this.p.adopted.push(listing.id);
+    const pet = normalizePet(newPetFrom(listing, name));
+    pet.catRoom = this.p.room;
+    // A new pet comes home with a bag of the food it's used to.
+    const starter = pet.species === 'dog' ? { dkibble: 3, biscuit: 3 } : { kibble: 3, treats: 3 };
+    for (const [k, v] of Object.entries(starter)) this.p.inventory[k] = (this.p.inventory[k] || 0) + v;
+    this.p.pets.push(pet);
+    this.save();
+    this.emit('change');
+    return { ok: true, pet };
+  }
+
+  switchPet(id) {
+    if (id === this.pet.id) return false;
+    const next = this.p.pets.find((x) => x.id === id);
+    if (!next) return false;
+    this.pet.lastTick = Date.now();
+    this._catchUp(next);
+    next.catRoom = this.p.room;          // your pet comes to greet you
+    next.out = false;
+    this.p.activeId = id;
+    this._bind();
+    this.save();
+    this.emit('pet');
+    this.emit('change');
+    return true;
+  }
+
+  rehome(id) {
+    if (this.p.pets.length <= 1 || id === this.pet.id) return false;
+    this.p.pets = this.p.pets.filter((x) => x.id !== id);
+    this.save(); this.emit('change');
+    return true;
+  }
+
+  /** While you were away (or looking after another pet) it lived its life. */
+  _catchUp(pet) {
+    const hours = Math.min(MAX_OFFLINE_HOURS, Math.max(0, (Date.now() - (pet.lastTick || Date.now())) / 3.6e6));
+    pet.lastTick = Date.now();
+    if (hours < 0.02) return hours;
+    const r = this._rates(pet);
+    const n = pet.needs; const b = pet.bowl;
+    n.food = clamp(n.food + r.food * hours);
+    n.water = clamp(n.water + r.water * hours);
     // It ate/drank from the bowls when it needed to.
     const eat = Math.min(b.food * 0.75, Math.max(0, 85 - n.food));
     n.food += eat; b.food = clamp(b.food - eat / 0.75);
+    if (b.food <= 0) b.foodType = null;
     const drink = Math.min(b.water, Math.max(0, 90 - n.water));
     n.water += drink; b.water = clamp(b.water - drink);
     // Napped on and off: energy drifts toward ~75.
     n.energy = clamp(n.energy + (75 - n.energy) * Math.min(1, hours / 3));
-    n.play = clamp(n.play + RATES.play * hours * 0.6);           // played alone a little
-    n.groom = clamp(n.groom - 0.8 * hours);                        // self-grooming mostly keeps up
-    this.s.litter = clamp(this.s.litter + LITTER_PER_VISIT * hours / 5);
-    // Neglect costs trust; a well-kept cat trusts you a little more.
+    n.play = clamp(n.play + r.play * hours * (pet.species === 'dog' ? 0.8 : 0.6));
+    n.groom = clamp(n.groom - (pet.species === 'dog' ? 1.2 : 0.8) * hours);
+    // Toilet: cats use the box; a dog left alone uses its pee pad.
+    pet.litter = clamp(pet.litter + LITTER_PER_VISIT * hours / (pet.species === 'dog' ? 4 : 5));
+    pet.bladder = Math.max(pet.bladder - hours * 60, pet.species === 'dog' ? 30 : 20);
+    // Neglect costs trust; a well-kept pet trusts you a little more.
     const worst = Math.min(n.food, n.water, n.play);
-    this.s.bond = clamp(this.s.bond + (worst < 15 ? -1.5 : 0.3) * hours);
-    this.s.asleep = false;
+    pet.bond = clamp(pet.bond + (worst < 15 ? -1.5 : 0.3) * hours);
+    pet.asleep = false;
+    pet.out = false;
+    return hours;
   }
 
   /** Call every frame with real seconds. */
-  tick(dt, { focus = false, asleep = false } = {}) {
+  tick(dt, { focus = false, asleep = false, out = false } = {}) {
     const h = (dt / 3600) * (focus ? 0.5 : 1);
+    const r = this._rates(this.pet);
     const n = this.s.needs;
-    n.food = clamp(n.food + RATES.food * h);
-    n.water = clamp(n.water + RATES.water * h);
-    n.play = clamp(n.play + RATES.play * h * (asleep ? 0.2 : 1));
-    n.groom = clamp(n.groom + RATES.groom * h);
-    n.energy = clamp(n.energy + (asleep ? SLEEP_ENERGY : AWAKE_ENERGY) * h);
-    this.s.bladder -= dt / 60;
-    this.s.lastTick = Date.now();
+    n.food = clamp(n.food + r.food * h);
+    n.water = clamp(n.water + r.water * h);
+    n.play = clamp(n.play + r.play * h * (asleep ? 0.2 : 1));
+    n.groom = clamp(n.groom + r.groom * h);
+    n.energy = clamp(n.energy + (asleep ? r.sleep : r.awake) * h);
+    if (!out) this.s.bladder -= dt / 60;
+    this.pet.lastTick = Date.now();
     this._saveTimer += dt;
     if (this._saveTimer > 5) { this._saveTimer = 0; this.save(); }
+    // The other pets live on in the background.
+    this._othersTimer += dt;
+    if (this._othersTimer > 60) {
+      this._othersTimer = 0;
+      for (const other of this.p.pets) if (other !== this.pet) this._catchUp(other);
+    }
   }
 
   // ---------------------------------------------------------------- derived
   get needs() { return this.s.needs; }
   get bond() { return this.s.bond; }
 
-  bondLabel() {
-    const b = this.s.bond;
+  bondLabel(b = this.s.bond) {
     return b < 20 ? 'Shy' : b < 45 ? 'Warming up' : b < 70 ? 'Friends' : b < 90 ? 'Best friends' : 'Soulmates';
   }
 
-  mood() {
-    const n = this.s.needs;
+  mood(pet = this.pet) {
+    const n = pet.needs;
+    const dog = pet.species === 'dog';
     const low = NEEDS.filter((x) => n[x.id] < 25).map((x) => x.id);
-    if (this.s.litter > 75) low.push('litter');
-    if (this.s.asleep) return { id: 'asleep', emoji: '😴', label: 'Napping', low };
+    if (pet.litter > 75) low.push('litter');
+    if (dog && pet.bladder < -10) low.unshift('walk');
+    const face = dog ? { happy: '🐶', ok: '🐕', sad: '🥺', grumpy: '😤' } : { happy: '😸', ok: '😺', sad: '😿', grumpy: '😾' };
+    if (pet.out) return { id: 'out', emoji: '🦮', label: 'Out for a walk', low: [] };
+    if (pet.asleep) return { id: 'asleep', emoji: '😴', label: 'Napping', low };
     const min = Math.min(n.food, n.water, n.energy, n.play, n.groom);
-    if (n.food < 25) return { id: 'hungry', emoji: '🙀', label: 'Hungry', low };
-    if (n.water < 25) return { id: 'thirsty', emoji: '😿', label: 'Thirsty', low };
-    if (this.s.litter > 75) return { id: 'litter', emoji: '😾', label: 'Box is dirty!', low };
-    if (n.play < 25) return { id: 'bored', emoji: '😼', label: 'Restless', low };
+    if (n.food < 25) return { id: 'hungry', emoji: dog ? '🥺' : '🙀', label: 'Hungry', low };
+    if (n.water < 25) return { id: 'thirsty', emoji: face.sad, label: 'Thirsty', low };
+    if (dog && pet.bladder < -10) return { id: 'potty', emoji: '🚪', label: 'Needs to go out!', low };
+    if (pet.litter > 75) return { id: 'litter', emoji: face.grumpy, label: dog ? 'Pee pad is dirty!' : 'Box is dirty!', low };
+    if (n.play < 25) return { id: 'bored', emoji: dog ? '🥱' : '😼', label: dog ? 'Needs exercise' : 'Restless', low };
     if (n.energy < 20) return { id: 'tired', emoji: '😪', label: 'Sleepy', low };
-    if (n.groom < 25) return { id: 'scruffy', emoji: '😾', label: 'Scruffy', low };
-    if (min >= 60) return { id: 'happy', emoji: '😸', label: 'Happy', low };
-    return { id: 'content', emoji: '😺', label: 'Content', low };
+    if (n.groom < 25) return { id: 'scruffy', emoji: face.grumpy, label: 'Scruffy', low };
+    if (min >= 60) return { id: 'happy', emoji: face.happy, label: 'Happy', low };
+    return { id: 'content', emoji: face.ok, label: 'Content', low };
   }
 
   // ---------------------------------------------------------------- mutations
-  addNeed(id, delta) { this.s.needs[id] = clamp(this.s.needs[id] + delta); this.emit('change'); }
+  addNeed(id, delta) { if (!(id in this.s.needs)) return; this.s.needs[id] = clamp(this.s.needs[id] + delta); this.emit('change'); }
   addBond(delta) { this.s.bond = clamp(this.s.bond + delta); this.emit('change'); }
 
   addCoins(n, why) {
-    this.s.coins = Math.max(0, this.s.coins + Math.round(n));
+    this.p.coins = Math.max(0, this.p.coins + Math.round(n));
     this.emit('coins', { n, why });
     this.emit('change');
   }
 
   addXp(n) {
-    this.s.xp += n;
-    while (this.s.xp >= xpToNext(this.s.level)) {
-      this.s.xp -= xpToNext(this.s.level);
-      this.s.level += 1;
-      this.s.coins += 25 * this.s.level;
-      this.emit('levelup', { level: this.s.level, reward: 25 * this.s.level });
+    this.p.xp += n;
+    while (this.p.xp >= xpToNext(this.p.level)) {
+      this.p.xp -= xpToNext(this.p.level);
+      this.p.level += 1;
+      this.p.coins += 25 * this.p.level;
+      this.emit('levelup', { level: this.p.level, reward: 25 * this.p.level });
     }
     this.emit('change');
   }
 
   count(stat, n = 1) { this.s.stats[stat] = (this.s.stats[stat] || 0) + n; }
-  setName(name) { this.s.name = name; this.save(); this.emit('change'); }
-  setRoom(i) { this.s.room = i; }
-  setCatRoom(i) { this.s.catRoom = i; }
-  setAsleep(v) { this.s.asleep = v; this.emit('change'); }
+  setName(name) { this.pet.name = name; this.save(); this.emit('change'); }
+  setRoom(i) { this.p.room = i; }
+  setCatRoom(i) { this.pet.catRoom = i; }
+  setAsleep(v) { this.pet.asleep = v; this.emit('change'); }
+  setOut(v) { this.pet.out = v; this.emit('change'); }
 
   // Food ---------------------------------------------------------------------
-  hasFood(id) { return (this.s.inventory[id] || 0) > 0; }
+  hasFood(id) { return (this.p.inventory[id] || 0) > 0; }
+  foodsFor(kind) {
+    return Object.entries(FOODS).filter(([id, f]) => f.species === this.species && this.hasFood(id)
+      && (kind === 'meal' ? f.kind === 'meal' : f.kind !== 'meal'));
+  }
 
-  /** Put a meal in the bowl. */
+  /** Put a store-bought meal in the bowl. */
   fillBowl(id) {
     const f = FOODS[id];
     if (!f || f.kind !== 'meal' || !this.hasFood(id)) return false;
     if (this.s.bowl.food > 70) return false;
-    this.s.inventory[id] -= 1;
+    this.p.inventory[id] -= 1;
     this.s.bowl.food = clamp(this.s.bowl.food + f.portion);
     this.s.bowl.foodType = id;
+    this.s.bowl.quality = f.like === 'love' ? 75 : 60;
     this.save(); this.emit('bowl'); this.emit('change');
     return true;
+  }
+
+  /** Recommended home-cooked portion for one meal (grams). */
+  portionGrams(kcalPer100) {
+    return Math.round((dailyKcal(this.pet) / mealsPerDay(this.pet)) / kcalPer100 * 100);
+  }
+
+  /** Serve a portion of home-cooked food from the fridge. */
+  serveMeal(mealId, grams) {
+    const m = this.p.meals.find((x) => x.id === mealId);
+    if (!m || m.species !== this.species) return { ok: false, why: 'That meal isn\'t for this pet' };
+    if (this.s.bowl.food > 70) return { ok: false, why: 'The bowl is still full' };
+    const g = Math.min(m.grams, grams ?? m.portion ?? 100);
+    const rec = this.portionGrams(m.kcal100);
+    m.grams -= g;
+    if (m.grams < 5) this.p.meals = this.p.meals.filter((x) => x !== m);
+    // 60% of the bowl = one right-sized meal.
+    this.s.bowl.food = clamp(this.s.bowl.food + 60 * (g / rec));
+    this.s.bowl.foodType = 'home';
+    this.s.bowl.quality = m.quality;
+    this.count('fed');
+    this.save(); this.emit('bowl'); this.emit('change');
+    return { ok: true, grams: g, rec, ratio: g / rec };
+  }
+
+  /** Fridge contents for the current pet, oldest first; drops expired food. */
+  fridge() {
+    const now = Date.now();
+    const before = this.p.meals.length;
+    this.p.meals = this.p.meals.filter((m) => m.expires > now);
+    if (this.p.meals.length !== before) this.save();
+    return this.p.meals.filter((m) => m.species === this.species).sort((a, b) => a.made - b.made);
   }
 
   refillWater() {
@@ -279,13 +509,13 @@ export class Game extends Emitter {
     this.save(); this.emit('bowl'); this.emit('change');
   }
 
-  /** The cat takes a few bites/laps from a bowl. Returns how much it got. */
+  /** The pet takes a few bites/laps from a bowl. Returns how much it got. */
   eatFromBowl(dt) {
     const b = this.s.bowl; const n = this.s.needs;
     if (b.food <= 0 || n.food >= 98) return 0;
     const bite = Math.min(b.food, 6 * dt);
     b.food = clamp(b.food - bite);
-    const like = FOODS[b.foodType]?.like === 'love' ? 1 : 0.9;
+    const like = (b.quality ?? 60) >= 70 ? 1 : 0.9;
     n.food = clamp(n.food + bite * 0.75 * like);
     if (b.food <= 0) b.foodType = null;
     this.emit('bowl');
@@ -308,27 +538,36 @@ export class Game extends Emitter {
   }
 
   /** Hand-feed a treat / catnip. Returns the food, or null. */
-  useTreat(id) {
+  useTreat(id, { training = false } = {}) {
     const f = FOODS[id];
     if (!f || f.kind === 'meal' || !this.hasFood(id)) return null;
-    if (f.kind === 'treat') {
+    if (f.kind === 'treat' && !training) {
       if (this.treatsLeftToday() <= 0) return { refused: 'too-many' };
       this.s.treats.count += 1;
     }
-    this.s.inventory[id] -= 1;
-    if (f.food) this.addNeed('food', f.food);
-    if (f.play) this.addNeed('play', f.play);
+    this.p.inventory[id] -= 1;
+    const k = training ? 0.3 : 1;                 // training uses tiny pieces
+    if (f.food) this.addNeed('food', f.food * k);
+    if (f.play) this.addNeed('play', f.play * k);
+    if (f.groom) this.addNeed('groom', f.groom * k);
     this.count('fed');
-    this.addXp(3);
+    this.addXp(training ? 1 : 3);
     this.save();
     return f;
   }
 
-  // Litter -------------------------------------------------------------------------
+  // Toilet -------------------------------------------------------------------------
   useLitter() {
     this.s.litter = clamp(this.s.litter + LITTER_PER_VISIT);
-    this.s.bladder = 40 + Math.random() * 40;
+    this.s.bladder = this.nextBladder();
     this.emit('litter'); this.emit('change');
+  }
+
+  /** Minutes until the next toilet trip. Puppies can't hold it long. */
+  nextBladder() {
+    const st = this.stage;
+    if (this.species === 'dog') return { baby: 50, young: 110, adult: 200, senior: 140 }[st] + Math.random() * 40;
+    return 40 + Math.random() * 40;
   }
 
   scoop() {
@@ -340,40 +579,67 @@ export class Game extends Emitter {
     return true;
   }
 
+  setAccident(a) { this.s.accident = a; this.emit('accident'); this.save(); }
+
+  // Walks + training (dogs) -----------------------------------------------------------
+  finishWalk(minutes, events) {
+    const w = this.s.walks;
+    if (w.day !== today()) { w.day = today(); w.count = 0; w.minutes = 0; }
+    w.count += 1; w.minutes += minutes;
+    this.s.bladder = this.nextBladder();
+    const n = this.s.needs;
+    n.play = clamp(n.play + Math.min(70, 10 + minutes * 5));
+    n.energy = clamp(n.energy - Math.min(30, minutes * 2));
+    n.groom = clamp(n.groom - minutes * 0.8);           // muddy paws
+    this.addBond(1 + Math.min(4, minutes / 4) + (events.social || 0) * 0.5);
+    this.count('walks');
+    this.addXp(4 + Math.round(minutes));
+    this.addCoins(Math.round(minutes * 2), 'walk');
+    this.save();
+  }
+
+  trainingLeftToday() {
+    const t = this.s.training;
+    if (t.day !== today()) { t.day = today(); t.minutes = 0; }
+    return Math.max(0, 15 - t.minutes);
+  }
+
   // Shop ---------------------------------------------------------------------
-  buy(kind, id) {
-    const table = kind === 'food' ? FOODS : kind === 'hat' ? HATS : THEMES;
+  buy(kind, id, table) {
     const item = table[id];
     if (!item) return { ok: false, why: 'Unknown item' };
-    if (kind === 'hat' && this.s.hats.includes(id)) return { ok: false, why: 'Already owned' };
-    if (kind === 'theme' && this.s.themes.includes(id)) return { ok: false, why: 'Already owned' };
-    if (item.level && this.s.level < item.level) return { ok: false, why: `Unlocks at level ${item.level}` };
-    if (this.s.coins < item.price) return { ok: false, why: 'Not enough coins' };
-    this.s.coins -= item.price;
-    if (kind === 'food') this.s.inventory[id] = (this.s.inventory[id] || 0) + 1;
-    if (kind === 'hat') this.s.hats.push(id);
-    if (kind === 'theme') this.s.themes.push(id);
+    if (kind === 'hat' && this.p.hats.includes(id)) return { ok: false, why: 'Already owned' };
+    if (kind === 'theme' && this.p.themes.includes(id)) return { ok: false, why: 'Already owned' };
+    if (item.level && this.p.level < item.level) return { ok: false, why: `Unlocks at level ${item.level}` };
+    if (this.p.coins < item.price) return { ok: false, why: 'Not enough coins' };
+    this.p.coins -= item.price;
+    if (kind === 'food') this.p.inventory[id] = (this.p.inventory[id] || 0) + 1;
+    if (kind === 'ingredient') this.p.pantry[id] = (this.p.pantry[id] || 0) + 1;
+    if (kind === 'hat') this.p.hats.push(id);
+    if (kind === 'theme') this.p.themes.push(id);
     this.save();
     this.emit('change');
     return { ok: true };
   }
 
   wearHat(id) { this.s.hat = id; this.save(); this.emit('hat', id); this.emit('change'); }
-  useTheme(id) { this.s.theme = id; this.save(); this.emit('theme', id); this.emit('change'); }
+  useTheme(id) { this.p.theme = id; this.save(); this.emit('theme', id); this.emit('change'); }
 
   // Daily reward ---------------------------------------------------------------
-  dailyAvailable() { return this.s.daily.last !== today(); }
+  dailyAvailable() { return this.p.daily.last !== today(); }
 
   claimDaily() {
     if (!this.dailyAvailable()) return 0;
     const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
-    this.s.daily.streak = this.s.daily.last === y ? this.s.daily.streak + 1 : 1;
-    this.s.daily.last = today();
-    const reward = 20 + Math.min(7, this.s.daily.streak) * 10;
+    this.p.daily.streak = this.p.daily.last === y ? this.p.daily.streak + 1 : 1;
+    this.p.daily.last = today();
+    const reward = 20 + Math.min(7, this.p.daily.streak) * 10;
     this.addCoins(reward, 'daily');
     this.save();
     return reward;
   }
 
-  setting(key, value) { this.s.settings[key] = value; this.save(); this.emit('settings'); }
+  setting(key, value) { this.p.settings[key] = value; this.save(); this.emit('settings'); }
 }
+
+export { BREEDS, SPECIES };

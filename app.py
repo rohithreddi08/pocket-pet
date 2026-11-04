@@ -39,5 +39,7 @@ st.caption(
     "it installs like an app and works offline. · Cat model: "
     "[Somali Cat Animated ver 1.2](https://sketchfab.com/3d-models/somali-cat-animated-ver-12-e185c3fd92b64c32b4515a32b29252fc) "
     "by [DreamNoms](https://sketchfab.com/DreamNoms), "
-    "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)."
+    "[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). · Dog models: "
+    "[Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html) "
+    "by Quaternius, [CC0](https://creativecommons.org/publicdomain/zero/1.0/)."
 )

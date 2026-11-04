@@ -72,7 +72,10 @@ export function mapBones(root) {
   const eyeSide = (re) => eyes.find((b) => re.test(normalizeName(b.name))) || null;
 
   // Front legs (for kneading, swatting, pawing): the shallowest arm-ish bone per side.
-  const arms = bones.filter((b) => /\b(upper ?arm|arm|front ?leg|shoulder|humerus)\b/.test(normalizeName(b.name)) && !END_BONE.test(normalizeName(b.name)));
+  const arms = bones.filter((b) => {
+    const n = normalizeName(b.name);
+    return /\b(upper ?arm|arm|front ?leg|shoulder|humerus)\b/.test(n) && !/\b(back|rear|hind)\b/.test(n) && !END_BONE.test(n);
+  });
   const armSide = (re) => arms.filter((b) => re.test(normalizeName(b.name))).sort((a, b) => depth(a) - depth(b))[0] || null;
 
   return {
@@ -84,10 +87,12 @@ export function mapBones(root) {
     neck:  pick(bones, /\bneck/),
     jaw:   pick(bones, /\bjaw|\bmouth/),
     // Chest = the deepest spine bone (closest to the shoulders), or an explicit chest.
-    chest: pick(bones, /\bchest\b|\bspine\s?(2|3|4|upper)\b|\bspine\d*\b/, END_BONE, 'deep'),
+    chest: pick(bones, /\bchest\b|\bspine\s?(2|3|4|upper)\b|\bspine\d*\b/, END_BONE, 'deep')
+      || pick(bones, /\btorso\s?\d*\b/, END_BONE, 'deep'),                // e.g. Quaternius animals
     // Pelvis — never a sided bone ("Hip.L" is a leg).
     hip:   pick(bones, /\bhips?\b|\bpelvis\b|\bbutt\b/, new RegExp(`${END_BONE.source}|${SIDED.source}`))
-      || pick(bones, /\broot\b/),
+      || pick(bones, /\broot\b/)
+      || pick(bones, /\bback\b/, new RegExp(`${END_BONE.source}|${SIDED.source}`)),
     earL:  side(LEFT),
     earR:  side(RIGHT),
     tail,

@@ -1,0 +1,34 @@
+3D models in this folder
+========================
+
+husky.glb, shiba.glb
+  "Ultimate Animated Animal Pack" by Quaternius — CC0 1.0 (public domain)
+  https://quaternius.com/packs/ultimateanimatedanimals.html
+
+german_shepherd.glb
+  "German Shepard" by Quaternius — CC0 1.0 (public domain)
+  https://poly.pizza/m/Hssa6NPc6W
+  (The app hides the backpack at runtime.)
+
+pug.glb
+  "Characters Pug" by Quaternius — listed on Poly Pizza as CC-BY 3.0
+  https://poly.pizza/m/xvcUwuKl4c
+  https://creativecommons.org/licenses/by/3.0/
+  (The app removes the backpack mesh at runtime.)
+
+cat_shorthair.glb
+  "Cat" by J-Toastie — CC-BY 3.0
+  https://poly.pizza/m/DJ9rpAhrh3
+  https://creativecommons.org/licenses/by/3.0/
+  (Only an idle animation ships with it; walk/trot/sit/lie/eat clips are
+  generated at runtime by js/pet/clipSynth.js. Material made matte at runtime.)
+
+hamster.glb
+  "Hamster" by Poly by Google — CC-BY 3.0
+  https://poly.pizza/m/3YtzEQ5TVUP
+  https://creativecommons.org/licenses/by/3.0/
+  (Static model; moved procedurally by js/pet/Hamster.js.)
+
+The Somali cat (../../cat/assets/cat_rigged.glb) is "Somali Cat Animated
+ver 1.2" by DreamNoms — CC BY 4.0:
+  https://sketchfab.com/3d-models/somali-cat-animated-ver-12-e185c3fd92b64c32b4515a32b29252fc

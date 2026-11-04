@@ -337,6 +337,10 @@ export class Sound {
   }
 
   /** Cooking sounds. */
+  // --- hamsters: mostly silent; squeak when scared, tiny crunches, a squeaky wheel
+  squeak(n = 1) { for (let i = 0; i < n; i += 1) this._tone(2400 + Math.random() * 600, 0.07, 'sine', 0.18, i * 0.11, 3200); }
+  crunch() { for (let i = 0; i < 3; i += 1) this._tone(1800 + Math.random() * 900, 0.025, 'square', 0.05, i * 0.07); }
+  wheel() { this._tone(1500, 0.06, 'triangle', 0.04, 0, 1300); }
   chop() { this._tone(260, 0.05, 'square', 0.12); this.squish(); }
   sizzle(on) {
     if (on && !this._sizzle && this._ok()) {

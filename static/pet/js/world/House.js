@@ -124,6 +124,7 @@ export class House {
     this._buildKitchen(this.rooms[1]);
     this._buildBathroom(this.rooms[2]);
     this._buildBedroom(this.rooms[3]);
+    this._buildCage(this.rooms[0]);
     this._buildLights();
     this._updateClock(true);
     this.species = 'cat';
@@ -293,6 +294,112 @@ export class House {
       inside: new THREE.Vector3(cx - 2.85, 0, -1.45),
       outside: new THREE.Vector3(cx - 4.9, 0, -1.7),
       face: new THREE.Vector3(cx - 5, 0, -1.5),
+    };
+  }
+
+
+  // ------------------------------------------------------------------ hamster tank
+  /**
+   * A glass tank on a low cabinet in the living room: the home a hamster
+   * actually needs: at least 100 x 50 cm of floor (RSPCA / Blue Cross guidance), deep
+   * paper bedding to burrow in, a solid wheel of 28 cm or more, a hide, a sand
+   * bath, a chew, a bowl and a water bottle. 1 world unit is about 30 cm.
+   */
+  _buildCage(room) {
+    const W = 3.4; const D = 1.7; const H = 1.35; const STAND = 0.62; const BED = 0.34;
+    const g = new THREE.Group();
+    g.position.set(room.cx + 1.05, 0, -1.72);
+    g.visible = false;
+    this.group.add(g);
+    const wood = mat('#b98a5e', { rough: 0.7 });
+    g.add(mesh(rbox(W + 0.3, STAND, D + 0.25, 0.05), mat('#f1e6d6', { rough: 0.6 }), { y: STAND / 2 }));
+    for (const s of [-1, 1]) g.add(mesh(box(0.02, STAND - 0.16, 0.02), mat('#d9c6a5', { rough: 0.3, metal: 0.6 }), { x: s * 0.6, y: STAND / 2, z: (D + 0.25) / 2 + 0.01, cast: false }));
+    const y0 = STAND;
+    g.add(mesh(box(W + 0.06, 0.06, D + 0.06), mat('#4a4e69', { rough: 0.5 }), { y: y0 + 0.03 }));
+    const glass = new THREE.MeshStandardMaterial({ color: '#e8f4f8', roughness: 0.05, metalness: 0, transparent: true, opacity: 0.12, depthWrite: false });
+    for (const s of [-1, 1]) {
+      g.add(mesh(new THREE.PlaneGeometry(W, H), glass, { y: y0 + H / 2, z: s * D / 2, ry: s < 0 ? 0 : Math.PI, cast: false, receive: false }));
+      g.add(mesh(new THREE.PlaneGeometry(D, H), glass, { x: s * W / 2, y: y0 + H / 2, ry: s * Math.PI / 2, cast: false, receive: false }));
+    }
+    const edge = mat('#4a4e69', { rough: 0.5 });
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.add(mesh(box(0.05, H, 0.05), edge, { x: x * W / 2, y: y0 + H / 2, z: z * D / 2, cast: false }));
+    for (const z of [-1, 1]) g.add(mesh(box(W, 0.05, 0.05), edge, { y: y0 + H, z: z * D / 2, cast: false }));
+    for (const x of [-1, 1]) g.add(mesh(box(0.05, 0.05, D), edge, { x: x * W / 2, y: y0 + H, cast: false }));
+    const bar = mat('#9aa0a6', { rough: 0.4, metal: 0.7 });
+    for (let i = 1; i < 28; i += 1) g.add(mesh(box(0.012, 0.012, D), bar, { x: -W / 2 + (i * W) / 28, y: y0 + H, cast: false }));
+    // Bedding: deep, so it can burrow, with a few mounds and some hay.
+    const bedTop = y0 + 0.06 + BED;
+    const bedMat = mat('#efe2c4', { rough: 1 });
+    g.add(mesh(box(W - 0.02, BED, D - 0.02), bedMat, { y: y0 + 0.06 + BED / 2, cast: false }));
+    for (const [x, z, r] of [[-0.55, -0.55, 0.35], [0.45, 0.6, 0.26], [-1.25, 0.55, 0.3], [0.85, -0.65, 0.22]]) {
+      const m = mesh(new THREE.SphereGeometry(r, 14, 8), bedMat, { x, y: bedTop - r * 0.75, z, cast: false });
+      m.scale.y = 0.45; g.add(m);
+    }
+    const hay = mat('#c9b26a', { rough: 1 });
+    for (let i = 0; i < 18; i += 1) {
+      g.add(mesh(box(0.18, 0.012, 0.012), hay, { x: -1.4 + Math.random() * 2.8, y: bedTop + 0.01, z: -0.7 + Math.random() * 1.4, ry: Math.random() * 3, cast: false }));
+    }
+    const Y = bedTop;
+    // Hide, door facing the front glass.
+    const hide = new THREE.Group();
+    const hw = 0.95; const hh = 0.5; const hd = 0.62;
+    hide.add(mesh(box(hw + 0.08, 0.05, hd + 0.08), wood, { y: hh }));
+    hide.add(mesh(box(hw, hh, 0.04), wood, { z: -hd / 2 }));
+    for (const s of [-1, 1]) hide.add(mesh(box(0.04, hh, hd), wood, { x: s * hw / 2 }));
+    for (const s of [-1, 1]) hide.add(mesh(box(hw * 0.3, hh, 0.04), wood, { x: s * hw * 0.35, z: hd / 2 }));
+    hide.add(mesh(box(hw * 0.4, hh * 0.35, 0.04), wood, { y: hh * 0.82, z: hd / 2 }));
+    hide.add(mesh(new THREE.CircleGeometry(0.22, 16), mat('#cbb48a', { rough: 1 }), { y: 0.02, rx: -Math.PI / 2, cast: false }));
+    hide.position.set(-1.05, Y - 0.02, -0.28);
+    g.add(hide);
+    // Wheel: solid running surface, 30 cm across.
+    const wheelR = 0.5;
+    const wheel = new THREE.Group();
+    const wm = mat('#7fb3d5', { rough: 0.45 });
+    wheel.add(mesh(cyl(wheelR, wheelR, 0.04, 32), wm, { rx: Math.PI / 2, z: -0.2 }));
+    wheel.add(mesh(new THREE.TorusGeometry(wheelR - 0.015, 0.025, 8, 40), wm, { z: 0.2 }));
+    wheel.add(mesh(new THREE.CylinderGeometry(wheelR, wheelR, 0.4, 32, 1, true), new THREE.MeshStandardMaterial({ color: '#a9cce3', roughness: 0.6, side: THREE.DoubleSide }), { rx: Math.PI / 2 }));
+    for (let i = 0; i < 6; i += 1) wheel.add(mesh(box(0.03, wheelR * 1.9, 0.02), mat('#5d8aa8', { rough: 0.5 }), { z: -0.17, rz: (i / 6) * Math.PI }));
+    const wheelHolder = new THREE.Group();
+    wheelHolder.add(mesh(box(0.08, wheelR + 0.08, 0.08), mat('#5d8aa8'), { y: (wheelR + 0.08) / 2, z: -0.28 }));
+    wheelHolder.add(mesh(box(0.6, 0.04, 0.5), mat('#5d8aa8'), { y: 0.02, z: -0.1 }));
+    wheel.position.set(0, wheelR + 0.05, 0);
+    wheelHolder.add(wheel);
+    wheelHolder.position.set(1.15, Y - 0.04, -0.25);
+    g.add(wheelHolder);
+    // Sand bath, bowl, bottle, chew, toilet corner.
+    g.add(mesh(cyl(0.3, 0.26, 0.1, 24), mat('#e9ecef', { rough: 0.3 }), { x: -0.2, y: Y + 0.03, z: -0.48 }));
+    const sand = mesh(cyl(0.27, 0.27, 0.02, 24), mat('#e6cf9c', { rough: 1 }), { x: -0.2, y: Y + 0.075, z: -0.48, cast: false });
+    g.add(sand);
+    g.add(mesh(cyl(0.15, 0.13, 0.08, 20), mat('#f2a65a', { rough: 0.35 }), { x: 0.05, y: Y + 0.02, z: 0.48 }));
+    const hFood = mesh(cyl(0.12, 0.12, 0.03, 16), mat('#c9a46b', { rough: 1 }), { x: 0.05, y: Y + 0.06, z: 0.48, cast: false });
+    g.add(hFood);
+    const bottle = new THREE.Group();
+    bottle.add(mesh(cyl(0.075, 0.075, 0.42, 16), new THREE.MeshStandardMaterial({ color: '#cfe8f7', roughness: 0.05, transparent: true, opacity: 0.4 }), { y: 0.3 }));
+    const hWater = mesh(cyl(0.065, 0.065, 0.38, 16), new THREE.MeshStandardMaterial({ color: '#7cc6f2', roughness: 0.05, transparent: true, opacity: 0.8 }), { y: 0.28, cast: false });
+    bottle.add(hWater);
+    bottle.add(mesh(cyl(0.012, 0.012, 0.16, 8), bar, { y: 0.05, rx: 0.4, z: 0.03 }));
+    bottle.position.set(0.4, Y, -D / 2 + 0.1);
+    g.add(bottle);
+    g.add(mesh(cyl(0.06, 0.07, 0.6, 10), mat('#8d6e4f', { rough: 0.9 }), { x: 0.75, y: Y + 0.05, z: 0.45, rz: Math.PI / 2, ry: 0.4 }));
+    g.add(mesh(new THREE.CircleGeometry(0.22, 16), mat('#d9c08a', { rough: 1 }), { x: -1.48, y: Y + 0.005, z: 0.6, rx: -Math.PI / 2, cast: false }));
+    const pee = [];
+    const peeMat = mat('#a8875a', { rough: 1 });
+    for (let i = 0; i < 5; i += 1) {
+      const c = mesh(new THREE.SphereGeometry(0.04 + Math.random() * 0.02, 8, 6), peeMat, { x: -1.48 + (Math.random() - 0.5) * 0.25, y: Y + 0.01, z: 0.6 + (Math.random() - 0.5) * 0.25, cast: false });
+      c.scale.y = 0.4; c.visible = false; g.add(c); pee.push(c);
+    }
+    this._interactive(g, 'cage', room.index);
+    g.updateMatrixWorld(true);
+    const w = (x, z, y = Y) => g.localToWorld(new THREE.Vector3(x, y, z));
+    this.cage = {
+      group: g, floorY: Y, wheel, wheelR, wheelSpin: 0, wheelDriven: false, food: hFood, water: hWater, sand, clumps: pee,
+      center: w(0, 0, y0 + H * 0.3),
+      bounds: { x0: g.position.x - W / 2 + 0.25, x1: g.position.x + W / 2 - 0.25, z0: g.position.z - D / 2 + 0.22, z1: g.position.z + D / 2 - 0.22 },
+      spots: {
+        nest: w(-1.05, -0.32), door: w(-1.05, 0.22), wheel: w(1.15, -0.25, Y + 0.06), wheelFront: w(1.15, 0.4),
+        bowl: w(0.05, 0.25), bottle: w(0.4, -0.5), sand: w(-0.2, -0.48, Y + 0.08), chew: w(0.55, 0.3),
+        toilet: w(-1.48, 0.6), front: w(0, 0.6),
+      },
     };
   }
 
@@ -654,6 +761,14 @@ export class House {
       this._doorLeaf.rotation.y = -this._doorOpen * 1.3;
     }
 
+    // The hamster wheel spins while it runs (wheelSpin in rad/s, set by the hamster).
+    const cg = this.cage;
+    if (cg?.group.visible && cg.wheelSpin) {
+      cg.wheel.rotation.z -= cg.wheelSpin * dt;
+      if (!cg.wheelDriven) cg.wheelSpin *= Math.exp(-dt * 1.5);
+      if (Math.abs(cg.wheelSpin) < 0.05) cg.wheelSpin = 0;
+    }
+
     // Cat-tree toy swings
     if (this._treeToy) this._treeToy.position.x = 0.3 + Math.sin(t * 1.7) * 0.05;
 
@@ -690,11 +805,19 @@ export class House {
     w.visible = water > 1;
     w.scale.set(0.8 + 0.2 * (water / 100), Math.max(0.05, water / 100), 0.8 + 0.2 * (water / 100));
     w.position.y = 0.035 + 0.04 * (water / 100);
+    // The hamster's own bowl and bottle in the tank.
+    const c = this.cage;
+    if (!c) return;                 // the tank is built after the kitchen
+    c.food.visible = food > 1;
+    c.food.scale.set(0.6 + 0.4 * (food / 100), Math.max(0.1, food / 100) * 1.4, 0.6 + 0.4 * (food / 100));
+    c.water.visible = water > 1;
+    c.water.scale.y = Math.max(0.03, water / 100);
+    c.water.position.y = 0.09 + 0.19 * Math.max(0.03, water / 100);
   }
 
   /** dirt 0–100 → visible clumps in the litter box / stains on the pee pad. */
   setLitter(dirt) {
-    const list = this.species === 'dog' ? this._pad.stains : this._catLitter.clumps;
+    const list = this.species === 'dog' ? this._pad.stains : this.species === 'hamster' ? this.cage.clumps : this._catLitter.clumps;
     const n = Math.round((dirt / 100) * list.length);
     list.forEach((c, i) => { c.visible = i < n; });
   }
@@ -706,13 +829,17 @@ export class House {
   setSpecies(species, length = 1.55) {
     this.species = species;
     const dog = species === 'dog';
-    this._litterGroup.visible = !dog;
-    this.catTree.visible = !dog;                 // a dog has no use for it (and it hides the front door)
+    const hamster = species === 'hamster';
+    this._litterGroup.visible = !dog && !hamster;
+    this.catTree.visible = !dog && !hamster;     // a dog has no use for it (and it hides the front door)
     this._pad.group.visible = dog;
+    this.cage.group.visible = hamster;
+    this.ball.mesh.visible = !hamster;
     const cx = this.rooms[2].cx;
     this.litterBox = dog
       ? { clumps: this._pad.stains, inside: new THREE.Vector3(cx + 0.25, 0, -2.2), front: new THREE.Vector3(cx + 0.25, 0, -1.0) }
       : { ...this._catLitter };
+    if (hamster) this.litterBox = { clumps: this.cage.clumps, inside: this.cage.spots.toilet, front: this.cage.spots.toilet };
     this._bed.scale.setScalar(Math.max(1, length / 1.55));
   }
 

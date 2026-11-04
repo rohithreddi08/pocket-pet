@@ -30,7 +30,16 @@ export const INGREDIENTS = {
   berries:  { name: 'Blueberries',    icon: '🫐', price: 4, kcal: 57,  prep: 'rinse', grams: 50, dogOnly: true },
   catvit:   { name: 'Cat diet supplement (taurine + calcium)', icon: '💊', price: 6, kcal: 0, prep: 'none', grams: 5, catOnly: true },
   dogvit:   { name: 'Dog diet supplement (calcium + vitamins)', icon: '💊', price: 6, kcal: 0, prep: 'none', grams: 5, dogOnly: true },
+  broccoli: { name: 'Broccoli',       icon: '🥦', price: 2, kcal: 35,  prep: 'chop', grams: 100, for: ['dog', 'hamster'] },
+  cucumber: { name: 'Cucumber',       icon: '🥒', price: 2, kcal: 15,  prep: 'chop', grams: 100, for: ['hamster'] },
 };
+
+/** Can this ingredient go in food for that species? */
+export function ingredientFor(f, species) {
+  if (f.for) return f.for.includes(species);
+  if (species === 'hamster') return !f.catOnly && !f.dogOnly && ['egg', 'pumpkin', 'sweetpot', 'chicken'].some((k) => INGREDIENTS[k] === f);
+  return !(species === 'dog' && f.catOnly) && !(species === 'cat' && f.dogOnly);
+}
 
 // Things in a human kitchen that must never go in pet food.
 export const HAZARDS = {
@@ -93,6 +102,14 @@ export const RECIPES = {
     cook: { method: 'Bake', seconds: 150, temp: 75 },
     makes: { treat: 'bites', count: 10 },
     note: 'Training treats. Still count toward the daily treat limit.',
+  },
+  // ------------------------------------------------------------- hamsters
+  ham_fresh: {
+    species: 'hamster', name: 'Egg & veggie fresh mix', icon: '🥗',
+    items: [['egg', 20], ['broccoli', 30], ['cucumber', 30]],
+    cook: { method: 'Hard-boil the egg, lightly steam the broccoli', seconds: 90, temp: 72 },
+    makes: { treat: 'hfresh', count: 8 },
+    note: 'Fresh food is a small daily extra (about a teaspoon), not the main diet. Chop it tiny, and remove anything uneaten next morning — hamsters hoard, and fresh food goes off in the nest.',
   },
 };
 

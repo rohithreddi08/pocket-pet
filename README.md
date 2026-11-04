@@ -5,14 +5,21 @@ rules, no cost — a little companion that lives in your browser (and on your
 phone's home screen).
 
 ## 🏪 Pet Store — raise several pets
-Tap your profile (top left) or 🏪 to open the **Pet Store**. It has a **Cats** and a **Dogs**
-section, with new animals every day from breeders and 🏠 rescues (low adoption fee —
+Tap your profile (top left) or 🏪 to open the **Pet Store**. It has **Cats**, **Dogs** and
+**Hamsters** sections, with new animals every day from breeders and 🏠 rescues (low adoption fee —
 adopt, don't shop). Your first adoption is free; your home holds up to 4 pets.
 
 | Section | Breeds | Ages | 
 |---|---|---|
-| 🐈 Cats | Somali, Abyssinian, Domestic Longhair (mixed breed) | kitten (2–4 months), young, adult, senior |
-| 🐕 Dogs | Siberian Husky, Alaskan Malamute, Shiba Inu, Akita, Indie (Indian Pariah Dog) | puppy, young, adult, senior |
+| 🐈 Cats | Somali, Abyssinian, Domestic Longhair, Russian Blue, Domestic Shorthair (Indie cat) | kitten (2–4 months), young, adult, senior |
+| 🐕 Dogs | Siberian Husky, Alaskan Malamute, Shiba Inu, Akita, Indie (Indian Pariah Dog), German Shepherd, Pug | puppy, young, adult, senior |
+| 🐹 Hamsters | Syrian, Winter White dwarf, Roborovski dwarf | pup (6–9 weeks), young, adult, senior (18 months+) |
+
+Models: Somali (DreamNoms), a separate low-poly **shorthair cat** (J-Toastie — it only ships
+with an idle clip, so walk/trot/sit/lie/eat clips are generated from its skeleton in
+`js/pet/clipSynth.js`), Quaternius' **Husky, Shiba, German Shepherd and Pug**, and a
+**hamster** (Poly by Google). Breeds without their own model reuse the closest body plan
+and say so on their store card.
 
 Each animal has its own coat colour, sex and personality (playful, cuddly, shy,
 independent, chatty, calm), and the store shows its energy, voice, grooming needs and
@@ -21,6 +28,20 @@ how well the breed copes with **flat / hostel life**. Pets **grow up in real tim
 slow down and stop making big jumps. One pet is at home on screen at a time; the
 others keep living their routine in the background — switch between them from your
 profile.
+
+## 🐹 Hamsters live in a proper tank
+A hamster gets a glass tank in the living room (100 × 50 cm floor, deep bedding, a solid
+wheel, a hide, a sand bath, a chew, a bowl and a bottle) and the camera zooms in on it.
+- **Nocturnal**: asleep in the nest by day, busy from dusk — wheel-running, foraging,
+  burrowing, sitting up to eat, stuffing its cheek pouches and hoarding in the nest,
+  grooming, gnawing, sand-bathing, using one toilet corner.
+- **Prey animal**: tap it while it sleeps and it wakes startled (and may nip); trust
+  builds by ✋ offering your hand, treats from your palm, and only then gentle strokes.
+- Care: ~1 tablespoon of mix a day (dwarfs less), fresh veg and a little protein,
+  spot-clean the toilet corner, fresh sand (never a water bath), partial bedding changes
+  no more than weekly. Cook a tiny egg & veggie mix in the kitchen.
+- The model has no skeleton, so it moves as a whole (bob, sit up, curl, roll).
+  Care guide sources: RSPCA, Blue Cross, ASPCA.
 
 ## 🐕 Dogs behave like dogs
 - Fit your day (active morning and evening, asleep at night), follow you everywhere,
@@ -129,11 +150,13 @@ static/pet/             the game
   js/cooking.js         ingredients, recipes, kitchen hazards
   js/audio.js           synthesized cat sounds + talk-back voice
   js/world/             House (rooms, furniture, lights), textures, particles
-  js/pet/               Pet (cat brain), Dog (dog brain), factory (models, coats, ages,
-                        store thumbnails), Accessories (hats)
+  js/pet/               Pet (cat brain), Dog (dog brain), Hamster (hamster brain + model),
+                        factory (models, coats, ages, store thumbnails), clipSynth
+                        (generated clips), Accessories (hats)
   js/ui/                HUD, sheets, tray, toasts; store.js (profile + pet store),
                         kitchen.js (cooking), outdoor.js (walks + training), guide.js
-  models/               dog models (husky.glb, shiba.glb) + license
+  models/               husky, shiba, german_shepherd, pug, cat_shorthair, hamster (.glb)
+                        + CREDITS.txt
   js/games/             mini-games
 static/cat/             cat engine shared with the game + the original 3D garden viewer
   CatLoader ClipRig BoneMap PoseLayer HeadTracker Procedural …
@@ -158,5 +181,12 @@ it from your app, and update the credit in `app.py`, the settings sheet and belo
   by Quaternius, [CC0](https://creativecommons.org/publicdomain/zero/1.0/) (Husky and Shiba Inu,
   converted to .glb; `static/pet/models/LICENSE-Quaternius.txt`). Lie-down / sleep / get-up
   clips are derived in code from the pack's own animation.
+- Shorthair cat: [Cat](https://poly.pizza/m/DJ9rpAhrh3) by J-Toastie,
+  [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Made matte and given generated clips at load time.
+- [German Shepherd](https://poly.pizza/m/Hssa6NPc6W) by Quaternius, CC0, and
+  [Characters Pug](https://poly.pizza/m/xvcUwuKl4c) by Quaternius, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
+  (their backpacks are hidden at load time).
+- [Hamster](https://poly.pizza/m/3YtzEQ5TVUP) by Poly by Google, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
+- Full list: `static/pet/models/CREDITS.txt`.
 - [three.js](https://threejs.org) r160, MIT license (`static/vendor/three/LICENSE`).
 - Everything else (house, furniture, textures, sounds, icons) is generated in code.

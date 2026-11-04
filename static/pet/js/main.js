@@ -99,6 +99,7 @@ async function boot() {
   progress(0.8, 'Almost there…');
 
   const isDog = () => game.species === 'dog';
+  const isHam = () => game.species === 'hamster';
   const name = () => game.s.name || 'Your pet';
   const she = (k) => pronoun(game.pet, k);
 
@@ -199,7 +200,7 @@ async function boot() {
       const f = FOODS[id];
       if (pet.outside) { ui.toast(`${name()} is out`); return; }
       if (f.kind === 'treat' && game.treatsLeftToday() <= 0) {
-        ui.toast(`That's enough treats for today — treats should stay under ~10% of a ${isDog() ? 'dog' : 'cat'}'s diet.`);
+        ui.toast(`That's enough treats for today — treats should stay under ~10% of a ${game.species}'s diet.`);
         if (pet.inView) pet.refuse();
         return;
       }
@@ -221,7 +222,7 @@ async function boot() {
       else if (pet.room !== room) ui.toast(`🔔 ${name()} heard the treat bag…`);
     },
     throwBall: () => {
-      if (room !== 0) return;
+      if (room !== 0 || isHam()) return;
       stopPlay();
       const b = house.ball;
       b.held = false;
@@ -262,8 +263,33 @@ async function boot() {
       pet.lightsChanged(room, r.lightsOn);
     },
     scoop: () => {
+      if (isHam()) {
+        if (game.scoop()) { sound.squish(); ui.toast('🧹 Toilet corner spot-cleaned — do this every day or two. Leave the rest of the bedding: it smells of home.'); }
+        else ui.toast('The toilet corner is clean ✨');
+        return;
+      }
       if (game.scoop()) { sound.squish(); ui.toast(isDog() ? '🧻 Fresh pee pad down' : '🧹 Litter box scooped — do this daily'); }
       else ui.toast(isDog() ? 'The pad is clean ✨' : 'The litter box is already clean ✨');
+    },
+    // --- hamsters ---------------------------------------------------------------
+    freshSand: () => {
+      const day = new Date().toISOString().slice(0, 10);
+      if (game.s.sandDay === day) { ui.toast('The sand bath is already fresh today ✨'); return; }
+      game.s.sandDay = day;
+      game.addNeed('groom', 12); game.addXp(2); sound.squish();
+      ui.toast('⏳ Fresh chinchilla/hamster sand (not dust!) in the bath. Hamsters clean their coat by rolling in it — never bathe a hamster in water.', 'big');
+    },
+    changeBedding: () => {
+      const last = game.s.beddingAt || 0;
+      const days = (Date.now() - last) / 864e5;
+      if (days < 7) {
+        ui.toast(`Only ${Math.max(1, Math.round(days))} day${Math.round(days) === 1 ? '' : 's'} since the last change — full clean-outs stress hamsters. Spot-clean instead; change part of the bedding every few weeks.`, 'big');
+        return;
+      }
+      game.s.beddingAt = Date.now();
+      game.s.litter = 0; game.emit('litter');
+      game.addBond(-1); game.addXp(4); sound.squish();
+      ui.toast('🛏️ Bedding refreshed. Tip: keep a handful of the old bedding and the nest — it keeps the tank smelling like home.', 'big');
     },
     toggleTap: () => {
       const on = house.toggleTap();
@@ -272,6 +298,13 @@ async function boot() {
       ui.toast(on ? '🚰 Tap dripping — Somalis are famously fascinated by water' : 'Tap off');
     },
     slowBlink: () => {
+      if (isHam()) {
+        const r = pet.call();
+        ui.toast(r === 'ok' ? '✋ You rest your hand in the tank and keep still…'
+          : r === 'ignored' ? `${name()} froze — not sure about your hand yet. Keep it still; trust takes days.`
+            : `${name()} is asleep — hamsters sleep by day. Try in the evening.`);
+        return;
+      }
       if (isDog()) {
         const r = pet.call();
         ui.toast(r === 'ok' ? `📣 “${name()}, come!”` : r === 'ignored' ? `📣 ${name()} heard you… and decided to think about it. Practise “Come” in training.` : r === 'away' ? `${name()} is out` : `${name()} is fast asleep`);
@@ -387,6 +420,7 @@ async function boot() {
 
   ui = new UI({ game, sound, actions });
   ui.setRoom(room);
+  ui.petChanged();
   voice.onState = (st) => ui.setTalk(st);
   voice.onHeard = () => pet.heard();
   game.on('settings', () => {
@@ -493,7 +527,12 @@ async function boot() {
     else if (id === 'litter') actions.scoop();
     else if (id === 'tap') actions.toggleTap();
     else if (id === 'puddle') actions.cleanPuddle();
-    else if (id === 'door') { if (isDog()) ui.openWalk(); else ui.toast('Indoor cats are safest indoors 🏠'); }
+    else if (id === 'door') { if (isDog()) ui.openWalk(); else if (!isHam()) ui.toast('Indoor cats are safest indoors 🏠'); }
+    else if (id === 'cage') {
+      ui.toast(pet.sleeping
+        ? `🐹 ${name()} is asleep in the nest. Hamsters are nocturnal — come back in the evening.`
+        : `🐹 ${name()}: ${pet.status || 'busy being a hamster'}`);
+    }
     else if (id === 'bed') ui.toast(isDog() ? 'Dogs pick their own nap time too 🐕' : 'Cats nap when *they* decide to 😼');
     else if (id === 'duck') {
       sound.boing(); sound.pop();
@@ -535,6 +574,7 @@ async function boot() {
   resize();
 
   let camX = house.rooms[room].cx;
+  let camZoom = 0;
   const parallax = new THREE.Vector2();
 
   // -------------------------------------------------------------- loop
@@ -596,18 +636,25 @@ async function boot() {
     fx.update(dt);
     laserDot.scale.setScalar(1 + Math.sin(elapsed * 20) * 0.15);
 
-    // Camera frames YOUR room.
-    camX += (house.rooms[room].cx - camX) * Math.min(1, dt * 3);
-    parallax.lerp(tracker?.pointer || new THREE.Vector2(), Math.min(1, dt * 2));
+    // Camera frames YOUR room — or, for a hamster, a close-up of its tank.
     const portrait = camera.aspect < 0.9;
-    camera.position.set(camX + parallax.x * 0.25, (portrait ? 1.55 : 1.75) + parallax.y * 0.1, camDist);
-    camera.lookAt(camX, portrait ? 0.85 : 0.95, 0);
+    const tank = isHam() && room === 0 ? house.cage.center : null;
+    camX += ((tank ? tank.x : house.rooms[room].cx) - camX) * Math.min(1, dt * 3);
+    camZoom += ((tank ? 1 : 0) - camZoom) * Math.min(1, dt * 3);
+    parallax.lerp(tracker?.pointer || new THREE.Vector2(), Math.min(1, dt * 2));
+    const c = house.cage.center;
+    const lerp = THREE.MathUtils.lerp;
+    camera.position.set(
+      camX + parallax.x * 0.25,
+      lerp(portrait ? 1.55 : 1.75, c.y + (portrait ? 1.2 : 1.05), camZoom) + parallax.y * 0.1,
+      lerp(camDist, c.z + (portrait ? 5.2 : 4.4), camZoom));
+    camera.lookAt(camX, lerp(portrait ? 0.85 : 0.95, c.y - 0.05, camZoom), lerp(0, c.z, camZoom));
 
     // Thought bubble over the head when a need is low and the pet is here.
     const mood = game.mood();
-    const lowIcon = { food: '🍗', water: '💧', energy: '😴', play: isDog() ? '🦮' : '🧶', groom: '🪮', litter: isDog() ? '🧻' : '🚽', walk: '🚪' }[mood.low[0]];
+    const lowIcon = { food: isHam() ? '🌾' : '🍗', water: '💧', energy: '😴', play: isDog() ? '🦮' : isHam() ? '🎡' : '🧶', groom: isHam() ? '⏳' : '🪮', litter: isDog() ? '🧻' : isHam() ? '🧹' : '🚽', walk: '🚪' }[mood.low[0]];
     if (lowIcon && pet.inView && !pet.sleeping && !pet.reactions.length) {
-      pet.headPosition(headV).add(new THREE.Vector3(0, 0.3 + pet.len * 0.15, 0)).project(camera);
+      pet.headPosition(headV).add(new THREE.Vector3(0, isHam() ? 0.18 : 0.3 + pet.len * 0.15, 0)).project(camera);
       ui.thought(lowIcon, (headV.x * 0.5 + 0.5) * window.innerWidth, (-headV.y * 0.5 + 0.5) * window.innerHeight);
     } else {
       ui.thought(null);

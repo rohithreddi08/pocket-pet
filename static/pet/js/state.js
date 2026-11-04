@@ -22,6 +22,7 @@ export const MAX_PETS = 4;
 const RATES = {
   cat: { food: -7, water: -9, play: -10, groom: -2.5, awake: -18, sleep: 22 },
   dog: { food: -6, water: -9, play: -12, groom: -2, awake: -20, sleep: 24 },
+  hamster: { food: -6, water: -8, play: -9, groom: -1.5, awake: -16, sleep: 20 },
 };
 const STAGE = {              // multipliers per life stage
   baby:   { food: 1.5, play: 1.4, awake: 1.45 },
@@ -41,6 +42,10 @@ const NEED_DEFS = {
 export const NEEDS = Object.values(NEED_DEFS);
 export function needsFor(species) {
   if (species === 'dog') return NEEDS.map((n) => (n.id === 'play' ? { ...n, icon: '🦮', label: 'Exercise & play' } : n));
+  if (species === 'hamster') {
+    return NEEDS.map((n) => (n.id === 'play' ? { ...n, icon: '🎡', label: 'Exercise (wheel) & foraging' }
+      : n.id === 'groom' ? { ...n, icon: '⏳', label: 'Grooming (sand bath)' } : n));
+  }
   return NEEDS;
 }
 
@@ -63,6 +68,14 @@ export const FOODS = {
   pbutter: { species: 'dog', name: 'Peanut butter (xylitol-free)', icon: '🥜', price: 5, kind: 'treat', food: 5, play: 4, like: 'love' },
   carrot:  { species: 'dog', name: 'Carrot sticks', icon: '🥕', price: 2,  kind: 'treat', food: 2,  play: 2, like: 'like' },
   bites:   { species: 'dog', name: 'Home-made pumpkin bites', icon: '🍪', price: 0, kind: 'treat', food: 4, play: 4, like: 'love', homemade: true },
+  // hamsters (a seed + pellet mix is the base diet; fresh food and protein in tiny amounts)
+  hmix:     { species: 'hamster', name: 'Hamster seed & pellet mix', icon: '🌾', price: 4, kind: 'meal', portion: 60, like: 'like' },
+  mealworm: { species: 'hamster', name: 'Dried mealworms', icon: '🐛', price: 3, kind: 'treat', food: 3, play: 2, like: 'love' },
+  hveg:     { species: 'hamster', name: 'Cucumber & broccoli bits', icon: '🥦', price: 2, kind: 'treat', food: 3, play: 2, like: 'like' },
+  hegg:     { species: 'hamster', name: 'Boiled egg (tiny piece)', icon: '🥚', price: 2, kind: 'treat', food: 4, play: 1, like: 'love' },
+  hseed:    { species: 'hamster', name: 'Sunflower seeds (fatty — a few)', icon: '🌻', price: 2, kind: 'treat', food: 3, play: 3, like: 'love' },
+  hfresh:   { species: 'hamster', name: 'Home-made egg & veggie mix', icon: '🥗', price: 0, kind: 'treat', food: 4, play: 2, like: 'love', homemade: true },
+  hchew:    { species: 'hamster', name: 'Applewood chew stick', icon: '🪵', price: 3, kind: 'treat', food: 0, play: 6, groom: 3, like: 'like' },
 };
 export const TREATS_PER_DAY = 5;
 
@@ -94,6 +107,10 @@ export function activityAt(hour, species = 'cat') {
     const d = ((h - c + 36) % 24) - 12;          // signed hours from c, wrapped to [-12, 12)
     return Math.exp(-(d * d) / (2 * w * w));
   };
+  if (species === 'hamster') {
+    // Hamsters are nocturnal: up from dusk, busiest around midnight, asleep by day.
+    return Math.min(1, 0.06 + 0.94 * Math.max(peak(hour, 23, 2.6), 0.8 * peak(hour, 3.5, 1.8)));
+  }
   if (species === 'dog') {
     // Dogs fit their people's day: up in the morning and evening, sleep at night.
     const night = hour < 6 || hour >= 23;
@@ -312,7 +329,8 @@ export class Game extends Emitter {
     const pet = normalizePet(newPetFrom(listing, name));
     pet.catRoom = this.p.room;
     // A new pet comes home with a bag of the food it's used to.
-    const starter = pet.species === 'dog' ? { dkibble: 3, biscuit: 3 } : { kibble: 3, treats: 3 };
+    const starter = pet.species === 'dog' ? { dkibble: 3, biscuit: 3 }
+      : pet.species === 'hamster' ? { hmix: 3, mealworm: 2, hveg: 2 } : { kibble: 3, treats: 3 };
     for (const [k, v] of Object.entries(starter)) this.p.inventory[k] = (this.p.inventory[k] || 0) + v;
     this.p.pets.push(pet);
     this.save();
@@ -409,15 +427,17 @@ export class Game extends Emitter {
     const low = NEEDS.filter((x) => n[x.id] < 25).map((x) => x.id);
     if (pet.litter > 75) low.push('litter');
     if (dog && pet.bladder < -10) low.unshift('walk');
-    const face = dog ? { happy: '🐶', ok: '🐕', sad: '🥺', grumpy: '😤' } : { happy: '😸', ok: '😺', sad: '😿', grumpy: '😾' };
+    const ham = pet.species === 'hamster';
+    const face = dog ? { happy: '🐶', ok: '🐕', sad: '🥺', grumpy: '😤' }
+      : ham ? { happy: '🐹', ok: '🐹', sad: '😟', grumpy: '😤' } : { happy: '😸', ok: '😺', sad: '😿', grumpy: '😾' };
     if (pet.out) return { id: 'out', emoji: '🦮', label: 'Out for a walk', low: [] };
     if (pet.asleep) return { id: 'asleep', emoji: '😴', label: 'Napping', low };
     const min = Math.min(n.food, n.water, n.energy, n.play, n.groom);
     if (n.food < 25) return { id: 'hungry', emoji: dog ? '🥺' : '🙀', label: 'Hungry', low };
     if (n.water < 25) return { id: 'thirsty', emoji: face.sad, label: 'Thirsty', low };
     if (dog && pet.bladder < -10) return { id: 'potty', emoji: '🚪', label: 'Needs to go out!', low };
-    if (pet.litter > 75) return { id: 'litter', emoji: face.grumpy, label: dog ? 'Pee pad is dirty!' : 'Box is dirty!', low };
-    if (n.play < 25) return { id: 'bored', emoji: dog ? '🥱' : '😼', label: dog ? 'Needs exercise' : 'Restless', low };
+    if (pet.litter > 75) return { id: 'litter', emoji: face.grumpy, label: dog ? 'Pee pad is dirty!' : ham ? 'Toilet corner needs cleaning' : 'Box is dirty!', low };
+    if (n.play < 25) return { id: 'bored', emoji: dog ? '🥱' : ham ? '😟' : '😼', label: dog ? 'Needs exercise' : ham ? 'Bored — bar-chewing risk' : 'Restless', low };
     if (n.energy < 20) return { id: 'tired', emoji: '😪', label: 'Sleepy', low };
     if (n.groom < 25) return { id: 'scruffy', emoji: face.grumpy, label: 'Scruffy', low };
     if (min >= 60) return { id: 'happy', emoji: face.happy, label: 'Happy', low };
@@ -567,6 +587,7 @@ export class Game extends Emitter {
   nextBladder() {
     const st = this.stage;
     if (this.species === 'dog') return { baby: 50, young: 110, adult: 200, senior: 140 }[st] + Math.random() * 40;
+    if (this.species === 'hamster') return 50 + Math.random() * 50;
     return 40 + Math.random() * 40;
   }
 

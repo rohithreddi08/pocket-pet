@@ -23,6 +23,13 @@ const FLAT = {
   shiba: ['👌 OK', 'Small and clean, but needs daily walks and a secure lead.'],
   akita: ['⚠️ Hard', 'Large and needs an experienced owner; check building rules.'],
   indie: ['👍 Good', 'Adaptable and low-maintenance; needs daily walks.'],
+  russianblue: ['🌟 Great', 'Quiet, calm and happy indoors with climbing spots and a routine.'],
+  dsh: ['🌟 Great', 'Most adapt easily to flat life.'],
+  germanshepherd: ['⚠️ Hard', 'A large working dog that needs long daily walks, training and a job to do.'],
+  pug: ['🌟 Great', 'Small, quiet and happy with short walks — but keep it cool: pugs overheat easily.'],
+  syrian: ['🌟 Great', 'Small, quiet (by day!) and often allowed where cats and dogs are not. Needs a big tank — and it runs at night, so keep it out of your bedroom if you sleep lightly.'],
+  winterwhite: ['🌟 Great', 'Small and quiet; needs a big tank and a 20 cm+ wheel.'],
+  robo: ['👍 Good', 'Tiny and quiet, but too fast and nervous to handle much — one to watch rather than cuddle.'],
 };
 
 function img(promise, cls = 'thumb') {
@@ -164,7 +171,9 @@ function meet(ui, l, back) {
       meter('Energy', b.traits.energy), meter('Voice', b.traits.vocal), meter('Cuddles', b.traits.cuddly), meter('Independence', b.traits.independent),
       meter('Grooming', Math.min(1, (b.groomRate || 1) / 1.3))),
     h('p', { class: 'small' }, h('b', {}, `Flat / hostel life: ${flat[0]}. `), flat[1]),
-    h('p', { class: 'small muted' }, `Adult weight ${b.kg[0]}–${b.kg[1]} kg. ${l.species === 'dog' ? 'Needs daily walks, training and company.' : 'Needs a litter box, scratching post and daily play.'} ${she[0].toUpperCase() + she.slice(1)} will grow up in real time — you'll raise ${her} from ${ageLabel(l.months)}.`),
+    h('p', { class: 'small muted' }, `Adult weight ${l.species === 'hamster' ? `${Math.round(b.kg[0] * 1000)}–${Math.round(b.kg[1] * 1000)} g` : `${b.kg[0]}–${b.kg[1]} kg`}. ${l.species === 'dog' ? 'Needs daily walks, training and company.'
+      : l.species === 'hamster' ? 'Needs a tank of at least 100 × 50 cm with deep bedding, a solid wheel (28 cm+ for a Syrian), a hide and a sand bath. Lives alone. Lifespan only 2–3 years.'
+        : 'Needs a litter box, scratching post and daily play.'} ${she[0].toUpperCase() + she.slice(1)} will grow up in real time — you'll raise ${her} from ${ageLabel(l.months)}.`),
     b.modelNote ? h('p', { class: 'small muted' }, `ℹ️ ${b.modelNote}`) : null,
     h('label', { class: 'form' }, 'Name', nameIn),
     h('div', { class: 'row' }, adopt, h('button', { onclick: back }, 'Back'))), { wide: true });

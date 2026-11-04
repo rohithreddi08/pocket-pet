@@ -22,6 +22,13 @@ export const SPECIES = {
     adultAt: 12, seniorAt: 96,
     sleepHours: '12–14 h', mealsPerDay: { baby: 3, adult: 2, senior: 2 },
   },
+  hamster: {
+    id: 'hamster', name: 'Hamsters', one: 'hamster', baby: 'pup', icon: '🐹',
+    // Weaned at 3–4 weeks, go to new homes at ~6–8 weeks, adult by ~3 months,
+    // old by ~18 months; most live 2–3 years.
+    adultAt: 3, seniorAt: 18, babyUntil: 2.2,
+    sleepHours: '12–14 h, by day', mealsPerDay: { baby: 1, adult: 1, senior: 1 },
+  },
 };
 
 // Dog coats map onto the dog models' material names.
@@ -76,6 +83,37 @@ export const BREEDS = {
       smoke:  { name: 'Black smoke', sat: 0.05, tint: [0.32, 0.32, 0.35] },
     },
     price: 50,
+    source: ['https://www.aspca.org/pet-care/cat-care/general-cat-care', 'ASPCA — general cat care'],
+  },
+
+    russianblue: {
+    species: 'cat', name: 'Russian Blue', origin: 'Breeder', length: 1.5, kg: [3, 5.5], adultAt: 12,
+    model: './models/cat_shorthair.glb', coat: 'short', groomRate: 0.5,
+    swatchBase: [0.36, 0.36, 0.36],
+    modelNote: 'Low-poly shorthair model; its walking, sitting and lying animations are generated from its skeleton.',
+    traits: { energy: 0.6, vocal: 0.2, cuddly: 0.55, independent: 0.6 },
+    about: 'A quiet, gentle cat with a dense silver-blue coat and green eyes. Reserved with strangers, very loyal to its people, and likes a predictable routine — a good flat cat.',
+    coats: {
+      blue: { name: 'Blue', sat: 0.6, tint: [1.2, 1.34, 1.6] },
+    },
+    price: 250,
+    source: ['https://cfa.org/breed/russian-blue/', 'CFA — Russian Blue'],
+  },
+  dsh: {
+    species: 'cat', name: 'Domestic Shorthair (Indie cat)', origin: 'Rescue', length: 1.5, kg: [3.5, 5.5], adultAt: 12,
+    model: './models/cat_shorthair.glb', coat: 'short', groomRate: 0.5,
+    swatchBase: [0.36, 0.36, 0.36],
+    modelNote: 'Low-poly shorthair model shown in solid colours (no tabby stripes); its walking, sitting and lying animations are generated from its skeleton.',
+    traits: { energy: 0.7, vocal: 0.5, cuddly: 0.6, independent: 0.55 },
+    about: 'The everyday mixed-breed short-haired cat — street cats, shelter cats and most of the cats in India. Hardy, adaptable, clever; every one has its own personality.',
+    coats: {
+      black:  { name: 'Black', sat: 0.6, tint: [0.36, 0.36, 0.38] },
+      grey:   { name: 'Grey', sat: 0.6, tint: [1.4, 1.4, 1.42] },
+      ginger: { name: 'Ginger', sat: 0.5, tint: [2.7, 1.35, 0.5] },
+      cream:  { name: 'Cream', sat: 0.5, tint: [2.55, 2.3, 1.8] },
+      white:  { name: 'White', sat: 0.5, tint: [2.6, 2.6, 2.55] },
+    },
+    price: 40,
     source: ['https://www.aspca.org/pet-care/cat-care/general-cat-care', 'ASPCA — general cat care'],
   },
 
@@ -157,6 +195,87 @@ export const BREEDS = {
     price: 40,
     source: ['https://en.wikipedia.org/wiki/Indian_pariah_dog', 'Wikipedia — Indian pariah dog'],
   },
+
+  germanshepherd: {
+    species: 'dog', name: 'German Shepherd', origin: 'Breeder', length: 2.0, kg: [22, 40], adultAt: 18,
+    model: './models/german_shepherd.glb', coat: 'double', groomRate: 1.2,
+    swatchBase: [0.5, 0.3, 0.18],
+    modelNote: 'Quaternius low-poly model; the adventure backpack is removed but the harness straps remain.',
+    traits: { energy: 0.9, vocal: 0.6, cuddly: 0.6, independent: 0.35 },
+    voice: { size: 0.85 },
+    about: 'Smart, loyal and very trainable — a working dog that needs a job: long walks, training and puzzle games every day. Protective of its family; sheds all year.',
+    coats: {
+      blacktan: { name: 'Black & tan', sat: 1, tint: [1, 1, 1] },
+      sable:    { name: 'Sable', sat: 0.7, tint: [1.15, 1.02, 0.85] },
+      black:    { name: 'Black', sat: 0.2, tint: [0.36, 0.36, 0.38] },
+    },
+    price: 330,
+    source: ['https://www.akc.org/dog-breeds/german-shepherd-dog/', 'AKC — German Shepherd Dog'],
+  },
+  pug: {
+    species: 'dog', name: 'Pug', origin: 'Breeder', length: 1.0, kg: [6, 8], adultAt: 12,
+    model: './models/pug.glb', coat: 'short', groomRate: 0.8,
+    swatchBase: [0.78, 0.66, 0.42],
+    modelNote: 'Quaternius low-poly model; the backpack is removed but the harness and bandana remain.',
+    traits: { energy: 0.4, vocal: 0.45, cuddly: 1, independent: 0.25 },
+    voice: { size: 0.35 },
+    about: 'A small, affectionate clown that just wants to be with you — a classic flat dog. Its flat face (brachycephaly) means breathing problems and overheating: short, cool walks, no hard exercise in the heat, and clean the face wrinkles.',
+    coats: {
+      fawn:    { name: 'Fawn', sat: 1, tint: [1, 1, 1] },
+      apricot: { name: 'Apricot', sat: 1.2, tint: [1.15, 0.95, 0.78] },
+      black:   { name: 'Black', sat: 0.15, tint: [0.32, 0.32, 0.34] },
+    },
+    price: 280,
+    source: ['https://www.akc.org/dog-breeds/pug/', 'AKC — Pug'],
+  },
+
+  // ------------------------------------------------------------------ hamsters
+  // Hamsters must live alone (Syrians fight; even dwarfs often do), so each is its own pet.
+  syrian: {
+    species: 'hamster', name: 'Syrian hamster', origin: 'Breeder', length: 0.5, kg: [0.1, 0.175], adultAt: 3,
+    model: './models/hamster.glb', modelYaw: -Math.PI / 2, coat: 'short', groomRate: 0.6,
+    foodG: [10, 15], swatchBase: [0.82, 0.55, 0.28],
+    modelNote: 'Low-poly model with no skeleton: it is moved, tilted and squashed as a whole, so legs and cheeks don\'t animate.',
+    traits: { energy: 0.85, vocal: 0.1, cuddly: 0.45, independent: 0.9 },
+    about: 'The “golden hamster”, about 15 cm long. Nocturnal: sleeps through the day and runs kilometres on its wheel at night. Strictly solitary. Can become tame and enjoy being handled if you are patient.',
+    coats: {
+      golden:   { name: 'Golden & white', sat: 1, tint: [1, 1, 1] },
+      cinnamon: { name: 'Cinnamon', sat: 1.1, tint: [1.15, 0.82, 0.65] },
+      cream:    { name: 'Cream', sat: 0.35, tint: [1.3, 1.18, 1.0] },
+      black:    { name: 'Black', sat: 0.15, tint: [0.4, 0.38, 0.38] },
+    },
+    price: 25,
+    source: ['https://www.rspca.org.uk/adviceandwelfare/pets/rodents/hamsters', 'RSPCA — hamster care'],
+  },
+  winterwhite: {
+    species: 'hamster', name: 'Winter White dwarf hamster', origin: 'Breeder', length: 0.32, kg: [0.03, 0.045], adultAt: 3,
+    model: './models/hamster.glb', modelYaw: -Math.PI / 2, coat: 'short', groomRate: 0.6,
+    foodG: [5, 8], swatchBase: [0.82, 0.55, 0.28],
+    modelNote: 'Shown with the Syrian hamster model, scaled down and recoloured; a real dwarf hamster is rounder with a dark stripe down its back.',
+    traits: { energy: 0.9, vocal: 0.15, cuddly: 0.4, independent: 0.85 },
+    about: 'A small (8–10 cm) Russian dwarf hamster. Quick and curious, usually fairly calm when handled gently. Best kept alone. Prone to diabetes, so no sugary fruit.',
+    coats: {
+      normal:   { name: 'Normal (grey-brown)', sat: 0.2, tint: [0.85, 0.82, 0.8] },
+      sapphire: { name: 'Sapphire', sat: 0.05, tint: [0.88, 0.92, 1.05] },
+      pearl:    { name: 'Pearl', sat: 0.05, tint: [1.3, 1.3, 1.28] },
+    },
+    price: 20,
+    source: ['https://www.bluecross.org.uk/pet-advice/hamster-care', 'Blue Cross — hamster care'],
+  },
+  robo: {
+    species: 'hamster', name: 'Roborovski dwarf hamster', origin: 'Breeder', length: 0.2, kg: [0.02, 0.025], adultAt: 3,
+    model: './models/hamster.glb', modelYaw: -Math.PI / 2, coat: 'short', groomRate: 0.5,
+    foodG: [3, 5], swatchBase: [0.82, 0.55, 0.28],
+    modelNote: 'Shown with the Syrian hamster model, scaled down and recoloured; a real Robo is tiny (about 5 cm) with white “eyebrows”.',
+    traits: { energy: 1, vocal: 0.1, cuddly: 0.15, independent: 1 },
+    about: 'The smallest and fastest hamster — fascinating to watch, not to cuddle: Robos are too quick and nervous for much handling. Very active at night.',
+    coats: {
+      agouti: { name: 'Agouti (sandy)', sat: 0.55, tint: [1.2, 1.05, 0.85] },
+      husky:  { name: 'Husky (pale)', sat: 0.25, tint: [1.3, 1.25, 1.15] },
+    },
+    price: 20,
+    source: ['https://www.rspca.org.uk/adviceandwelfare/pets/rodents/hamsters', 'RSPCA — hamster care'],
+  },
 };
 
 // Per-pet personality (real individuals differ even within a breed).
@@ -187,7 +306,7 @@ export function lifeStage(pet, now = Date.now()) {
   const m = ageMonths(pet, now);
   const sp = SPECIES[pet.species] || SPECIES.cat;
   const adultAt = breedOf(pet).adultAt || sp.adultAt;
-  if (m < Math.min(6, adultAt / 2)) return 'baby';
+  if (m < (sp.babyUntil ?? Math.min(6, adultAt / 2))) return 'baby';
   if (m < adultAt) return 'young';
   const senior = pet.species === 'dog' && breedOf(pet).kg[1] > 30 ? 84 : sp.seniorAt;   // big dogs age sooner
   return m >= senior ? 'senior' : 'adult';
@@ -200,6 +319,7 @@ export function stageName(pet) {
 }
 
 export function ageLabel(months) {
+  if (months < 3) return `${Math.max(6, Math.round(months * 4.35))} weeks`;
   const m = Math.floor(months);
   if (m < 12) return `${Math.max(2, m)} month${m === 1 ? '' : 's'}`;
   const y = Math.floor(m / 12); const r = m % 12;
@@ -210,7 +330,8 @@ export function ageLabel(months) {
 export function growth(pet, now = Date.now()) {
   const m = ageMonths(pet, now);
   const adultAt = breedOf(pet).adultAt || 12;
-  const k = Math.max(0, Math.min(1, (m - 1.5) / (adultAt - 1.5)));
+  const born = pet.species === 'hamster' ? 0.7 : 1.5;      // age (months) when it can leave its mother
+  const k = Math.max(0, Math.min(1, (m - born) / (adultAt - born)));
   return 0.5 + 0.5 * Math.pow(k, 0.6);
 }
 
@@ -226,6 +347,7 @@ export function weightKg(pet, now = Date.now()) {
  * the standard veterinary estimate (e.g. WSAVA / Merck Veterinary Manual).
  */
 export function dailyKcal(pet) {
+  if (pet.species === 'hamster') return Math.round(dailyFoodGrams(pet) * 3.6);   // a hamster mix is ~360 kcal/100 g
   const kg = weightKg(pet);
   const rer = 70 * Math.pow(kg, 0.75);
   const st = lifeStage(pet);
@@ -233,6 +355,15 @@ export function dailyKcal(pet) {
     ? { baby: 3, young: 2, adult: 1.6, senior: 1.4 }[st]
     : { baby: 2.5, young: 2, adult: 1.2, senior: 1.1 }[st];
   return Math.round(rer * f);
+}
+
+/**
+ * Hamsters: grams of dry mix a day (about a tablespoon for a Syrian) — fed once,
+ * in the evening, often scattered so it can forage.
+ */
+export function dailyFoodGrams(pet) {
+  const [lo, hi] = breedOf(pet).foodG || [10, 15];
+  return Math.round((lo + (hi - lo) * 0.5) * (0.6 + 0.4 * growth(pet)));
 }
 
 export function mealsPerDay(pet) {
@@ -260,6 +391,12 @@ const AGE_BANDS = {
   adult:  { label: 'Adult',  months: [24, 72], price: 0.8 },
   senior: { label: 'Senior', months: [96, 132], price: 0.4 },
 };
+const HAMSTER_BANDS = {
+  baby:   { label: 'Baby',   months: [1.5, 2.2], price: 1.1 },
+  young:  { label: 'Young',  months: [2.5, 4],   price: 1 },
+  adult:  { label: 'Adult',  months: [5, 14],    price: 0.8 },
+  senior: { label: 'Senior', months: [18, 22],   price: 0.4 },
+};
 export const AGE_FILTERS = [['all', 'All ages'], ...Object.entries(AGE_BANDS).map(([k, v]) => [k, v.label])];
 
 /**
@@ -271,22 +408,24 @@ export function listings(species, day = new Date().toISOString().slice(0, 10)) {
   const pick = (arr) => arr[Math.floor(r() * arr.length)];
   const breeds = Object.entries(BREEDS).filter(([, b]) => b.species === species);
   const out = [];
-  const bands = Object.keys(AGE_BANDS);
+  const BANDS = species === 'hamster' ? HAMSTER_BANDS : AGE_BANDS;
+  const bands = Object.keys(BANDS);
   for (let i = 0; i < 8; i += 1) {
     const [breedId, breed] = breeds[i % breeds.length];
     const band = i < 3 ? 'baby' : pick(bands);
-    const [a0, a1] = AGE_BANDS[band].months;
-    const months = Math.round(a0 + r() * (a1 - a0));
+    const [a0, a1] = BANDS[band].months;
+    const months = species === 'hamster' ? +(a0 + r() * (a1 - a0)).toFixed(1) : Math.round(a0 + r() * (a1 - a0));
     const sex = r() < 0.5 ? 'female' : 'male';
     const coatId = pick(Object.keys(breed.coats));
     const personality = pick(Object.keys(PERSONALITIES));
     const name = pick(NAMES[sex]);
     const rescue = breed.origin === 'Rescue' || (band === 'senior') || r() < 0.15;
     const base = rescue ? Math.min(breed.price, 60) : breed.price;
-    const price = Math.round((base * AGE_BANDS[band].price) / 5) * 5;
+    const price = Math.round((base * BANDS[band].price) / 5) * 5;
+    const floor = species === 'hamster' ? 10 : rescue ? 20 : 60;
     out.push({
       id: `${day}-${species}-${i}`, species, breed: breedId, coat: coatId, sex, months, band, personality, name,
-      rescue, price: Math.max(rescue ? 20 : 60, price),
+      rescue, price: Math.max(floor, price),
     });
   }
   return out;

@@ -74,7 +74,7 @@ export function coatSwatch(breed, coatId) {
   const coat = breed.coats?.[coatId];
   if (!coat) return '#ccc';
   if (coat.main) return `linear-gradient(135deg, ${coat.main} 0 55%, ${coat.light} 55% 100%)`;
-  const base = [0.78, 0.52, 0.33];                         // ruddy Somali, roughly
+  const base = breed.swatchBase || [0.78, 0.52, 0.33];     // the model's own colour (ruddy Somali by default)
   const l = 0.299 * base[0] + 0.587 * base[1] + 0.114 * base[2];
   const rgb = base.map((v, i) => Math.round(255 * Math.min(1, (l + (v - l) * (coat.sat ?? 1)) * coat.tint[i])));
   return `rgb(${rgb.join(',')})`;

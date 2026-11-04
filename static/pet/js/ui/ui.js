@@ -7,7 +7,7 @@
 // ============================================================================
 import { h, $ } from './dom.js';
 import { needsFor, FOODS, HATS, THEMES, xpToNext } from '../state.js';
-import { INGREDIENTS } from '../cooking.js';
+import { INGREDIENTS, ingredientFor } from '../cooking.js';
 import { breedOf, pronoun, stageName, ageLabel, ageMonths } from '../species.js';
 import { ROOMS } from '../world/House.js';
 import { memoryGame } from '../games/memory.js';
@@ -39,6 +39,8 @@ export class UI {
   }
 
   get dog() { return this.game.species === 'dog'; }
+  get ham() { return this.game.species === 'hamster'; }
+  get treatIcon() { return this.dog ? '🦴' : this.ham ? '🐛' : '🍪'; }
   get petName() { return this.game.s.name || 'Your pet'; }
   pron(k = 'subj') { return pronoun(this.game.pet, k); }
 
@@ -64,8 +66,8 @@ export class UI {
     this._buildNeeds();
     const dog = this.dog;
     const blink = $('#btnBlink');
-    blink.textContent = dog ? '📣' : '😌';
-    blink.title = dog ? 'Call your dog — “Come!”' : 'Slow blink — cats read it as trust';
+    blink.textContent = dog ? '📣' : this.ham ? '✋' : '😌';
+    blink.title = dog ? 'Call your dog — “Come!”' : this.ham ? 'Offer your hand to sniff — how hamsters learn to trust you' : 'Slow blink — cats read it as trust';
     $('#btnGuide').title = `${breedOf(this.game.pet).name} care guide`;
     $('#btnTalk').title = `Talk to ${this.petName}`;
     if (this._roomIndex != null) this.setRoom(this._roomIndex);
@@ -156,9 +158,17 @@ export class UI {
       return b;
     };
     const dog = this.dog;
+    const ham = this.ham;
     const s = this.game.s;
     if (id === 'living') {
-      if (dog) {
+      if (ham) {
+        dock.append(
+          btn('🌾', `Food ${Math.round(s.bowl.food)}%`, () => this.openTray('meal')),
+          btn('🐛', 'Treat', () => this.openTray('treat')),
+          btn('✋', 'Offer hand', () => this.a.slowBlink()),
+          btn('🧹', `Spot-clean ${s.litter > 60 ? '⚠️' : s.litter > 25 ? '•' : '✓'}`, () => { this.a.scoop(); this._dock('living'); }),
+          btn('🎮', 'Games', () => this.openGames()));
+      } else if (dog) {
         dock.append(
           btn('🦮', s.bladder < 0 ? 'Walk ⚠️' : 'Walk', () => this.openWalk(), s.bladder < 0 ? 'alert' : ''),
           btn('🎾', 'Fetch', () => this.a.throwBall()),
@@ -175,12 +185,17 @@ export class UI {
         btn('🥣', `Meal ${Math.round(b.food)}%`, () => this.openTray('meal')),
         btn('💧', `Water ${Math.round(b.water)}%`, () => { this.a.refillWater(); this._dock('kitchen'); }),
         btn('🍳', cooking ? 'Cooking…' : 'Cook', () => this.openCook(), cooking ? 'alert' : ''),
-        btn(dog ? '🦴' : '🍪', 'Treat', () => this.openTray('treat')),
+        btn(this.treatIcon, 'Treat', () => this.openTray('treat')),
         btn('🛒', 'Groceries', () => this.openShop('food')));
     } else if (id === 'bathroom') {
       const dirt = Math.round(s.litter);
       const mark = dirt > 60 ? '⚠️' : dirt > 25 ? '•' : '✓';
-      if (dog) {
+      if (ham) {
+        dock.append(
+          btn('⏳', 'Fresh sand', () => this.a.freshSand()),
+          btn('🧹', `Toilet corner ${mark}`, () => { this.a.scoop(); this._dock('bathroom'); }),
+          btn('🛏️', 'Bedding', () => this.a.changeBedding()));
+      } else if (dog) {
         dock.append(tool('🪮', 'Brush', 'brush'), btn('🧻', `Pad ${mark}`, () => { this.a.scoop(); this._dock('bathroom'); }), tool('🧽', 'Bath', 'sponge'), tool('🚿', 'Rinse', 'shower'));
       } else {
         dock.append(
@@ -190,7 +205,7 @@ export class UI {
           tool('🧽', 'Bath', 'sponge'), tool('🚿', 'Rinse', 'shower'));
       }
     } else if (id === 'bedroom') {
-      dock.append(btn('💡', 'Lights', () => this.a.toggleLights()), btn(dog ? '🦴' : '🍪', 'Treat', () => this.openTray('treat')), btn('⏱️', 'Focus', () => this.openFocus()));
+      dock.append(btn('💡', 'Lights', () => this.a.toggleLights()), btn(this.treatIcon, 'Treat', () => this.openTray('treat')), btn('⏱️', 'Focus', () => this.openFocus()));
     }
     this._dockRoom = id;
   }
@@ -281,11 +296,11 @@ export class UI {
     const render = (t) => {
       tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
       grid.replaceChildren();
-      note.textContent = t === 'food' ? `Showing food for ${species === 'dog' ? 'dogs' : 'cats'} (${this.petName}).`
+      note.textContent = t === 'food' ? `Showing food for ${species === 'dog' ? 'dogs' : species === 'hamster' ? 'hamsters' : 'cats'} (${this.petName}).`
         : t === 'ingredient' ? 'Fresh ingredients for home cooking 🍳. One pack makes one recipe.' : '';
       let entries = [];
       if (t === 'food') entries = Object.entries(FOODS).filter(([, f]) => f.species === species && !f.homemade);
-      else if (t === 'ingredient') entries = Object.entries(INGREDIENTS).filter(([, f]) => !(species === 'dog' && f.catOnly) && !(species === 'cat' && f.dogOnly));
+      else if (t === 'ingredient') entries = Object.entries(INGREDIENTS).filter(([, f]) => ingredientFor(f, species));
       else if (t === 'hat') entries = Object.entries(HATS);
       else entries = Object.entries(THEMES);
       const table = t === 'food' ? FOODS : t === 'ingredient' ? INGREDIENTS : t === 'hat' ? HATS : THEMES;
@@ -369,7 +384,7 @@ export class UI {
       this.game.save();
       if (coins > 0) this.sound.coin();
       body.replaceChildren(h('div', { class: 'result' },
-        h('div', { class: 'big' }, score > best ? '🏆' : (this.dog ? '🐶' : '😺')),
+        h('div', { class: 'big' }, score > best ? '🏆' : (this.dog ? '🐶' : this.ham ? '🐹' : '😺')),
         h('h3', {}, score > best ? 'New best!' : 'Nice play!'),
         h('p', {}, `Score ${score} · +${coins} 🪙`),
         h('div', { class: 'row' },
@@ -389,7 +404,7 @@ export class UI {
     const home = kind === 'meal' ? fridgeList(this) : [];
     const title = kind === 'meal'
       ? `🥣 Fill the bowl (now ${Math.round(s.bowl.food)}%)`
-      : `${this.dog ? '🦴' : '🍪'} Treats — ${this.game.treatsLeftToday()} left today`;
+      : `${this.treatIcon} Treats — ${this.game.treatsLeftToday()} left today`;
     const buttons = items.map(([id, f]) => h('button', {
       class: 'food', title: f.name,
       onclick: () => { if (kind === 'meal') { this.a.fillBowl(id); this.closeTray(); } else this.a.treat(id); },
@@ -398,10 +413,12 @@ export class UI {
       h('div', { class: 'tray-head' }, h('b', {}, title), h('button', { class: 'x', onclick: () => this.closeTray() }, '✕')),
       items.length || home.length
         ? h('div', { class: 'tray-items' }, ...home, ...buttons)
-        : h('div', { class: 'tray-empty' }, kind === 'meal' ? `No ${this.dog ? 'dog' : 'cat'} food left! ` : 'No treats left! ',
+        : h('div', { class: 'tray-empty' }, kind === 'meal' ? `No ${this.game.species} food left! ` : 'No treats left! ',
           h('button', { class: 'primary', onclick: () => { this.closeTray(); this.openShop('food'); } }, 'Buy some')),
       kind === 'meal' ? h('div', { class: 'tray-foot' },
-        h('p', { class: 'muted small' }, this.dog
+        h('p', { class: 'muted small' }, this.ham
+          ? 'About a tablespoon of mix a day for a Syrian (dwarfs: a teaspoon or two), given in the evening when it wakes. Scattering some in the bedding lets it forage, as it would in the wild. It will hoard part of it in the nest — that\'s normal.'
+          : this.dog
           ? `Adult dogs do best on two measured meals a day${this.game.stage === 'baby' ? ' (puppies: 3–4 small meals)' : ''}.`
           : `Adult cats do best on a couple of measured meals a day${this.game.stage === 'baby' ? ' (kittens: 3–4 small meals)' : ''}. ${this.pron()[0].toUpperCase() + this.pron().slice(1)}'ll eat from the bowl when hungry.`),
         h('button', { class: 'chip small', onclick: () => { this.closeTray(); this.openCook(); } }, '🍳 Cook fresh food')) : null,
@@ -458,8 +475,8 @@ export class UI {
       h('label', {}, 'Cartoon voice pitch', pitch),
       h('label', {}, 'Microphone sensitivity', sens),
       h('div', { class: 'stats' },
-        `💗 Trust ${Math.round(s.bond)}/100 (${g.bondLabel()}) · 🍪 Fed ${st.fed} · 🍳 Cooked ${st.cooked || 0} · 🤚 Petted ${st.petted} · 🪮 Brushed ${st.brushed} · ${this.dog ? `🦮 Walks ${st.walks || 0}` : `🧹 Scooped ${st.scooped} · 😌 Blinks ${st.blinks}`} · 😴 Naps ${st.slept} · 🗣️ Talked ${st.talked} · 🛁 Baths ${st.washed} · 🎮 Games ${st.games} · ⏱️ Focus ${st.focusMin} min`),
-      h('p', { class: 'muted small' }, 'Cat model: “Somali Cat Animated ver 1.2” by DreamNoms (CC BY 4.0). Dog models: “Ultimate Animated Animal Pack” by Quaternius (CC0). Progress is saved on this device.'),
+        `💗 Trust ${Math.round(s.bond)}/100 (${g.bondLabel()}) · 🍪 Fed ${st.fed} · 🍳 Cooked ${st.cooked || 0} · 🤚 Petted ${st.petted} · 🪮 Brushed ${st.brushed} · ${this.dog ? `🦮 Walks ${st.walks || 0}` : `🧹 Cleaned ${st.scooped} · ${this.ham ? '✋ Hand offers' : '😌 Blinks'} ${st.blinks}`} · 😴 Naps ${st.slept} · 🗣️ Talked ${st.talked} · 🛁 Baths ${st.washed} · 🎮 Games ${st.games} · ⏱️ Focus ${st.focusMin} min`),
+      h('p', { class: 'muted small' }, '3D models: “Somali Cat Animated ver 1.2” by DreamNoms (CC BY 4.0); “Cat” by J-Toastie (CC BY 3.0, via Poly Pizza); Husky, Shiba Inu and German Shepherd by Quaternius (CC0); “Characters Pug” by Quaternius (CC BY 3.0); “Hamster” by Poly by Google (CC BY 3.0). Progress is saved on this device.'),
       reset));
   }
 
@@ -486,7 +503,7 @@ export class UI {
       h('p', {}, `A ${breed.name} cat (${ageLabel(ageMonths(pet))}) just moved in — curious, playful and a little independent. What will you call ${this.pron('obj')}?`),
       input,
       h('button', { class: 'primary', onclick: go }, 'Let\'s go!'),
-      h('p', { class: 'muted small' }, `${this.pron('Subj')} has ${this.pron('pos')} own routine: eats from ${this.pron('pos')} bowl, naps, explores and follows you around. Gentle care builds trust 💗. Later, visit the 🏪 Pet Store in your profile to adopt more pets — cats and dogs of different breeds and ages.`)));
+      h('p', { class: 'muted small' }, `${this.pron('Subj')} has ${this.pron('pos')} own routine: eats from ${this.pron('pos')} bowl, naps, explores and follows you around. Gentle care builds trust 💗. Later, visit the 🏪 Pet Store in your profile to adopt more pets — cats, dogs and hamsters of different breeds and ages.`)));
     $('#sheetClose').hidden = true;
     this._onSheetClose = null;
     setTimeout(() => input.focus(), 50);

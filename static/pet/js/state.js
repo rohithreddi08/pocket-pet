@@ -13,6 +13,10 @@
 // Everything keeps going while the app is closed, capped at 12 h.
 // ============================================================================
 import { BREEDS, SPECIES, PERSONALITIES, breedOf, lifeStage, newPetFrom, dailyKcal, mealsPerDay } from './species.js';
+import {
+  defaultHealth, normalizeHealth, tickHealth, vitality, worst, healthLabel, symptomsOf, CONDITIONS, VET,
+  diagnose, treat, giveDose, dosesDue, prevention,
+} from './health.js';
 
 const KEY = 'pocketpet.save.v1';
 const MAX_OFFLINE_HOURS = 12;
@@ -144,6 +148,7 @@ function defaultPet(over = {}) {
     training: { day: today(), minutes: 0 },
     walks: { day: today(), count: 0, minutes: 0 },
     stats: { fed: 0, petted: 0, brushed: 0, washed: 0, slept: 0, talked: 0, games: 0, focusMin: 0, scooped: 0, blinks: 0, cooked: 0, walks: 0 },
+    health: defaultHealth(),
     ...over,
   };
 }
@@ -211,6 +216,7 @@ function normalizePet(p) {
     walks: { ...d.walks, ...p.walks },
     stats: { ...d.stats, ...p.stats },
     tricks: { ...p.tricks },
+    health: normalizeHealth(p.health),
   };
 }
 
@@ -366,6 +372,7 @@ export class Game extends Emitter {
     const hours = Math.min(MAX_OFFLINE_HOURS, Math.max(0, (Date.now() - (pet.lastTick || Date.now())) / 3.6e6));
     pet.lastTick = Date.now();
     if (hours < 0.02) return hours;
+    const before = { needs: { ...pet.needs }, litter: pet.litter, bladder: pet.bladder };
     const r = this._rates(pet);
     const n = pet.needs; const b = pet.bowl;
     n.food = clamp(n.food + r.food * hours);
@@ -388,6 +395,20 @@ export class Game extends Emitter {
     pet.bond = clamp(pet.bond + (worst < 15 ? -1.5 : 0.3) * hours);
     pet.asleep = false;
     pet.out = false;
+    // Health over the absence: step through it with needs interpolated from
+    // before → now, so "hungry for the last 2 hours" isn't counted as 12.
+    const after = { needs: { ...pet.needs }, litter: pet.litter, bladder: pet.bladder };
+    const STEPS = Math.max(1, Math.ceil(hours));
+    const sick = [];
+    for (let i = 1; i <= STEPS; i += 1) {
+      const k = i / STEPS;
+      for (const key of Object.keys(after.needs)) pet.needs[key] = before.needs[key] + (after.needs[key] - before.needs[key]) * k;
+      pet.litter = before.litter + (after.litter - before.litter) * k;
+      pet.bladder = before.bladder + (after.bladder - before.bladder) * k;
+      sick.push(...tickHealth(pet, breedOf(pet), hours / STEPS, { stage: lifeStage(pet), offline: true, now: Date.now() - (1 - k) * hours * 3.6e6 }));
+    }
+    Object.assign(pet.needs, after.needs); pet.litter = after.litter; pet.bladder = after.bladder;
+    if (sick.length) (this._offlineSick ||= []).push({ pet, ids: sick });
     return hours;
   }
 
@@ -400,8 +421,16 @@ export class Game extends Emitter {
     n.water = clamp(n.water + r.water * h);
     n.play = clamp(n.play + r.play * h * (asleep ? 0.2 : 1));
     n.groom = clamp(n.groom + r.groom * h);
-    n.energy = clamp(n.energy + (asleep ? r.sleep : r.awake) * h);
+    n.energy = clamp(n.energy + (asleep ? r.sleep : r.awake * vitality(this.pet).energy) * h);
     if (!out) this.s.bladder -= dt / 60;
+    // Health runs on real time (checked every few seconds).
+    this._healthAcc = (this._healthAcc || 0) + dt;
+    if (this._healthAcc > 5) {
+      const ids = tickHealth(this.pet, this.breed, this._healthAcc / 3600, { stage: this.stage });
+      this._healthAcc = 0;
+      if (ids.length) this.emit('sick', ids);
+      this.emit('health');
+    }
     this.pet.lastTick = Date.now();
     this._saveTimer += dt;
     if (this._saveTimer > 5) { this._saveTimer = 0; this.save(); }
@@ -431,6 +460,8 @@ export class Game extends Emitter {
     const face = dog ? { happy: '🐶', ok: '🐕', sad: '🥺', grumpy: '😤' }
       : ham ? { happy: '🐹', ok: '🐹', sad: '😟', grumpy: '😤' } : { happy: '😸', ok: '😺', sad: '😿', grumpy: '😾' };
     if (pet.out) return { id: 'out', emoji: '🦮', label: 'Out for a walk', low: [] };
+    const hs = pet.health?.score ?? 100;
+    if (hs < 65) return { id: 'sick', emoji: hs < 25 ? '🚑' : '🤒', label: healthLabel(pet.health), low: ['health', ...low] };
     if (pet.asleep) return { id: 'asleep', emoji: '😴', label: 'Napping', low };
     const min = Math.min(n.food, n.water, n.energy, n.play, n.groom);
     if (n.food < 25) return { id: 'hungry', emoji: dog ? '🥺' : '🙀', label: 'Hungry', low };
@@ -485,6 +516,7 @@ export class Game extends Emitter {
     if (!f || f.kind !== 'meal' || !this.hasFood(id)) return false;
     if (this.s.bowl.food > 70) return false;
     this.p.inventory[id] -= 1;
+    if (this.s.needs.food > 80) this.pet.overfed = (this.pet.overfed || 0) + 0.6;   // topping up a full pet
     this.s.bowl.food = clamp(this.s.bowl.food + f.portion);
     this.s.bowl.foodType = id;
     this.s.bowl.quality = f.like === 'love' ? 75 : 60;
@@ -508,6 +540,7 @@ export class Game extends Emitter {
     if (m.grams < 5) this.p.meals = this.p.meals.filter((x) => x !== m);
     // 60% of the bowl = one right-sized meal.
     this.s.bowl.food = clamp(this.s.bowl.food + 60 * (g / rec));
+    if (g / rec > 1.3) this.pet.overfed = (this.pet.overfed || 0) + (g / rec - 1);
     this.s.bowl.foodType = 'home';
     this.s.bowl.quality = m.quality;
     this.count('fed');
@@ -566,6 +599,8 @@ export class Game extends Emitter {
       this.s.treats.count += 1;
     }
     this.p.inventory[id] -= 1;
+    if (id === 'hchew') this.s.health.lastChewAt = Date.now();   // a fresh chew keeps hamster teeth worn down
+    if (!training) this.pet.overfed = (this.pet.overfed || 0) + 0.08;
     const k = training ? 0.3 : 1;                 // training uses tiny pieces
     if (f.food) this.addNeed('food', f.food * k);
     if (f.play) this.addNeed('play', f.play * k);
@@ -660,7 +695,51 @@ export class Game extends Emitter {
     return reward;
   }
 
+  // Health + vet ---------------------------------------------------------------------
+  get health() { return this.pet.health; }
+  healthIssues() {
+    const h = this.health;
+    const conds = Object.keys(h.conds).length;
+    return { conds, due: dosesDue(this.pet).filter((d) => d.due).length, prevent: prevention(this.pet).length, score: h.score };
+  }
+  _pay(price) {
+    if (this.p.coins < price) return false;
+    this.p.coins -= price; this.emit('coins', { n: -price, why: 'vet' }); return true;
+  }
+  vetConsult() {
+    if (!this._pay(VET.consult.price)) return { ok: false, why: `A consultation costs 🪙 ${VET.consult.price}.` };
+    const ids = diagnose(this.pet);
+    this.addXp(3); this.save(); this.emit('change'); this.emit('health');
+    return { ok: true, ids };
+  }
+  vetTreat(id) {
+    const def = CONDITIONS[id];
+    const price = def.treat.price || 0;
+    if (price && this.p.coins < price) return { ok: false, why: `That treatment costs 🪙 ${price}.` };
+    const r = treat(this.pet, id);
+    if (r.ok && price) this._pay(price);
+    if (r.ok) { this.addBond(-1); this.addXp(4); }      // vet trips are stressful, but worth it
+    this.save(); this.emit('change'); this.emit('health');
+    return r;
+  }
+  vetPrevent(kind) {
+    const it = VET[kind];
+    if (!this._pay(it.price)) return { ok: false, why: `${it.name} costs 🪙 ${it.price}.` };
+    const h = this.health;
+    if (kind === 'vaccine') h.vaccinatedAt = Date.now();
+    if (kind === 'parasite') { h.parasiteAt = Date.now(); if (h.conds.fleas?.dx) h.conds.fleas.treated = true; }
+    if (kind === 'checkup') { h.checkupAt = Date.now(); diagnose(this.pet); }
+    h.log.push({ t: Date.now(), text: it.name });
+    this.addXp(3); this.save(); this.emit('change'); this.emit('health');
+    return { ok: true };
+  }
+  giveMedicine(id) {
+    const r = giveDose(this.pet, id);
+    if (r.ok) { this.addXp(2); this.addBond(-0.3); this.save(); this.emit('health'); this.emit('change'); }
+    return r;
+  }
+
   setting(key, value) { this.p.settings[key] = value; this.save(); this.emit('settings'); }
 }
 
-export { BREEDS, SPECIES };
+export { BREEDS, SPECIES, CONDITIONS, VET, symptomsOf, worst, healthLabel, prevention, dosesDue, vitality };

@@ -43,6 +43,30 @@ wheel, a hide, a sand bath, a chew, a bowl and a bottle) and the camera zooms in
 - The model has no skeleton, so it moves as a whole (bob, sit up, curl, roll).
   Care guide sources: RSPCA, Blue Cross, ASPCA.
 
+## 🩺 Real-time health — neglect makes pets ill
+Health runs on real time, also while the app is closed (each pet, even the ones not on
+screen). Neglect causes the illnesses it causes in real life:
+
+| Neglect | Illness |
+|---|---|
+| no water for hours | dehydration |
+| no food | weight loss; cats: fatty liver (hepatic lipidosis) after ~1.5 days |
+| dirty litter box + stress | cystitis (FLUTD) in cats |
+| dog kept from peeing | urinary tract infection |
+| dirty tank + stress | wet tail in hamsters (an emergency) |
+| no brushing | matted fur (long coats), hot spots (dogs) |
+| no play / exercise | stress behaviours |
+| overfeeding, too many treats | overweight (body condition score 1–9) |
+| no chews (hamsters) | overgrown teeth |
+| no flea treatment / vaccines | fleas; cat flu / kennel cough more likely |
+
+Untreated illness gets worse and health drops; sick pets move slower, sleep more,
+refuse to play and show symptoms (you see the symptom first, not the diagnosis). The
+🩺 button opens the vet: a consultation diagnoses, treatments cost coins, medicine
+courses must be given on time at home (early doses are refused, late ones slow
+recovery), and vaccines, flea & worm treatment and yearly check-ups keep pets well.
+Code: `js/health.js` (rules) and `js/ui/health.js` (screen).
+
 ## 🐕 Dogs behave like dogs
 - Fit your day (active morning and evening, asleep at night), follow you everywhere,
   greet you with a whole-body wiggle, bring you the ball, beg while you cook.
@@ -148,6 +172,7 @@ static/pet/             the game
   js/state.js           save file (profile + pets), needs, economy, shop catalogue
   js/species.js         pet store: species, breeds, coats, ages, personalities, nutrition
   js/cooking.js         ingredients, recipes, kitchen hazards
+  js/health.js          illnesses, neglect → condition rules, vet, medicine
   js/audio.js           synthesized cat sounds + talk-back voice
   js/world/             House (rooms, furniture, lights), textures, particles
   js/pet/               Pet (cat brain), Dog (dog brain), Hamster (hamster brain + model),

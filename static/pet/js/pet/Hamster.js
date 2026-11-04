@@ -445,7 +445,7 @@ export class Hamster {
       let diff = ((want - this.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       this.heading += diff * Math.min(1, dt * 10);
       if (this.pause > 0) { this.pause -= dt; this.speed = 0; } else {
-        const top = this.len * (this.goal.fast ? 5 : 3);
+        const top = this.len * (this.goal.fast ? 5 : 3) * (this.speedScale ?? 1);
         this.speed += (top - this.speed) * Math.min(1, dt * 8);
         this.burst -= dt;
         if (this.burst <= 0 && !this.goal.fast) { this.burst = rand(0.4, 1.4); if (Math.random() < 0.4 && d > this.len * 2) this.pause = rand(0.2, 0.8); }

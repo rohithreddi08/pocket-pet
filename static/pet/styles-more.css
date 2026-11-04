@@ -130,3 +130,20 @@
   .pet-actions { grid-column: span 2; justify-items: stretch; }
   .meters { grid-template-columns: 1fr; }
 }
+
+/* ---------- health ---------- */
+#btnHealth.sick { animation: pulseSick 1.4s ease-in-out infinite; }
+@keyframes pulseSick { 50% { box-shadow: 0 0 0 6px rgba(250, 82, 82, 0.35); } }
+.health h3 { margin: 14px 0 6px; }
+.hsum { display: grid; gap: 6px; padding: 10px 12px; border-radius: 14px; background: #fff6ec; }
+.hbar { height: 10px; border-radius: 6px; background: #eee3d6; overflow: hidden; }
+.hbar.thin { height: 6px; width: 90px; flex: none; }
+.hbar i { display: block; height: 100%; border-radius: 6px; transition: width .4s; }
+.hconds { display: grid; gap: 8px; }
+.hcond { padding: 10px 12px; border-radius: 12px; background: #fff; border: 1px solid #f0e3d3; }
+.hcond.dx { border-color: #ffd8a8; }
+.hcond p { margin: 4px 0; }
+.hc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hprev { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed #f0e3d3; }
+.hprev .warn { color: #e03131; font-weight: 600; }
+.health details { margin-top: 10px; }

@@ -71,6 +71,8 @@ export function openProfile(ui) {
           h('b', {}, `${p.name || 'Unnamed'} ${p.sex === 'male' ? '♂' : '♀'}`),
           h('div', { class: 'small muted' }, `${b.name} · ${ageLabel(ageMonths(p))} (${stageName(p)})`),
           h('div', { class: 'small' }, `${mood.emoji} ${mood.label} · 💗 ${g.bondLabel(p.bond)} · ${(PERSONALITIES[p.personality] || {}).icon || ''} ${(PERSONALITIES[p.personality] || {}).name || ''}`),
+          h('div', { class: 'small', style: p.health && p.health.score < 65 ? 'color:#e03131;font-weight:600' : '' },
+            `🩺 Health ${Math.round(p.health?.score ?? 100)}/100${Object.keys(p.health?.conds || {}).length ? ` · ${Object.keys(p.health.conds).length} problem${Object.keys(p.health.conds).length > 1 ? 's' : ''}` : ''}`),
           h('div', { class: 'mini-needs' }, ...needs)),
         h('div', { class: 'pet-actions' },
           active ? h('span', { class: 'tag' }, '🏠 At home')

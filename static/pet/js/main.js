@@ -11,7 +11,7 @@ import { House, ROOMS } from './world/House.js';
 import { Particles } from './world/Particles.js';
 import { Accessories } from './pet/Accessories.js';
 import { buildPet, disposePet } from './pet/factory.js';
-import { Game, FOODS, THEMES } from './state.js';
+import { Game, FOODS, THEMES, vitality, symptomsOf, CONDITIONS } from './state.js';
 import { breedOf, pronoun } from './species.js';
 import { Sound, Voice, audioContext } from './audio.js';
 import { UI } from './ui/ui.js';
@@ -71,6 +71,7 @@ async function boot() {
     if (built) { pet.sound.purr(false); hats?.wear(null); disposePet(built, scene); }
     built = await buildPet(record, { scene, camera, house, fx, sound, voice, game });
     ({ pet, root, bones, tracker, layer } = built);
+    pet._baseSpeed0 = pet.baseSpeed;
     hats = new Accessories(root, bones.head);
     hats.wear(game.s.hat);
     petMeshes.length = 0;
@@ -100,6 +101,13 @@ async function boot() {
 
   const isDog = () => game.species === 'dog';
   const isHam = () => game.species === 'hamster';
+  /** Too unwell to play? Says so and returns true. */
+  const tooSick = () => {
+    if (vitality(game.pet).playful) return false;
+    ui.toast(`🤒 ${name()} is too unwell to play. Check 🩺 Health — a vet visit may be needed.`, 'big');
+    return true;
+  };
+  const symptomLine = (id, p = game.pet) => `${p.name || 'Your pet'} is ${symptomsOf(id, p.species)[0]}`;
   const name = () => game.s.name || 'Your pet';
   const she = (k) => pronoun(game.pet, k);
 
@@ -222,7 +230,7 @@ async function boot() {
       else if (pet.room !== room) ui.toast(`🔔 ${name()} heard the treat bag…`);
     },
     throwBall: () => {
-      if (room !== 0 || isHam()) return;
+      if (room !== 0 || isHam() || tooSick()) return;
       stopPlay();
       const b = house.ball;
       b.held = false;
@@ -365,7 +373,7 @@ async function boot() {
       pet.comeHome(onBack);
     },
     trick: (id, done) => {
-      if (!isDog()) return false;
+      if (!isDog() || tooSick()) return false;
       summon(() => pet.doTrick(id, done));
       return true;
     },
@@ -430,6 +438,18 @@ async function boot() {
     voice.parrot = game.s.settings.parrot;
   });
   game.on('reset', async () => { applyTheme('cream'); await spawnPet(); });
+  // Health: new symptoms, and what happened while you were away.
+  game.on('sick', (ids) => {
+    ui.toast(`🤒 ${symptomLine(ids[0])}. Open 🩺 Health to see what to do.`, 'big');
+    ui.refresh();
+  });
+  if (game._offlineSick?.length) {
+    setTimeout(() => {
+      for (const { pet: p, ids } of game._offlineSick) ui.toast(`🤒 While you were away: ${symptomLine(ids[0], p)}.`, 'big');
+      game._offlineSick = [];
+    }, 4500);
+  }
+  let sickNag = 60;
 
   // -------------------------------------------------------------- input
   const ray = new THREE.Raycaster();
@@ -548,6 +568,7 @@ async function boot() {
     laserDot.position.set(point.x, 0.012, point.z);
     laserDot.visible = true;
     if (!laserOn) {
+      if (tooSick()) { laserDot.visible = false; ui.setTool(null); return; }
       laserOn = true;
       if (pet.sleeping && game.bond < 30) return;
       summon(() => pet.startChase(() => (laserDot.visible ? laserDot.position : null), () => {
@@ -628,6 +649,28 @@ async function boot() {
       if (f.t >= 1) { scene.remove(f.s); f.s.material.map.dispose(); f.s.material.dispose(); flying.splice(i, 1); }
     }
 
+    // Illness shows in behaviour: slower, sleepier; very ill pets just lie down.
+    const vit = vitality(game.pet);
+    if (pet._baseSpeed0 != null) pet.baseSpeed = pet._baseSpeed0 * vit.speed;
+    pet.speedScale = vit.speed;
+    sickNag -= dt;
+    if (sickNag <= 0) {
+      sickNag = 180;
+      const h = game.health;
+      const worstId = Object.entries(h.conds).sort((a, b) => b[1].sev - a[1].sev)[0]?.[0];
+      const due = game.healthIssues().due;
+      if (due) ui.hint(`💊 ${name()}'s medicine is due — open 🩺 Health. Missing doses slows recovery.`);
+      else if (worstId && pet.inView && h.conds[worstId].sev > 0.3) {
+        ui.hint(h.conds[worstId].dx && !h.conds[worstId].treated && CONDITIONS[worstId].treat.kind !== 'care'
+          ? `${name()} still needs treatment for ${CONDITIONS[worstId].name.toLowerCase()}.`
+          : `${symptomLine(worstId)}.`);
+      }
+      if (h.score < 25 && !pet.sleeping && !pet.outside && (!pet.act || pet.act.interruptible !== false)) {
+        pet.interrupt?.(true);
+        pet._startNap?.(pet.room);
+      }
+    }
+
     voice.update(dt);
     layer.restore();
     pet.update(dt);
@@ -652,7 +695,7 @@ async function boot() {
 
     // Thought bubble over the head when a need is low and the pet is here.
     const mood = game.mood();
-    const lowIcon = { food: isHam() ? '🌾' : '🍗', water: '💧', energy: '😴', play: isDog() ? '🦮' : isHam() ? '🎡' : '🧶', groom: isHam() ? '⏳' : '🪮', litter: isDog() ? '🧻' : isHam() ? '🧹' : '🚽', walk: '🚪' }[mood.low[0]];
+    const lowIcon = { health: '🤒', food: isHam() ? '🌾' : '🍗', water: '💧', energy: '😴', play: isDog() ? '🦮' : isHam() ? '🎡' : '🧶', groom: isHam() ? '⏳' : '🪮', litter: isDog() ? '🧻' : isHam() ? '🧹' : '🚽', walk: '🚪' }[mood.low[0]];
     if (lowIcon && pet.inView && !pet.sleeping && !pet.reactions.length) {
       pet.headPosition(headV).add(new THREE.Vector3(0, isHam() ? 0.18 : 0.3 + pet.len * 0.15, 0)).project(camera);
       ui.thought(lowIcon, (headV.x * 0.5 + 0.5) * window.innerWidth, (-headV.y * 0.5 + 0.5) * window.innerHeight);

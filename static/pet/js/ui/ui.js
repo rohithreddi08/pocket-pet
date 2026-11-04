@@ -16,6 +16,7 @@ import { openProfile, openStore } from './store.js';
 import { openCook, fridgeList } from './kitchen.js';
 import { openWalk, openTrain } from './outdoor.js';
 import { guideFor } from './guide.js';
+import { openHealth } from './health.js';
 
 const RING_C = 2 * Math.PI * 20;
 
@@ -95,6 +96,11 @@ export class UI {
     const pct = s.xp / xpToNext(s.level);
     $('#levelRing').setAttribute('stroke-dashoffset', String(RING_C * (1 - pct)));
     $('#btnDaily').classList.toggle('badge', this.game.dailyAvailable());
+    const hi = this.game.healthIssues();
+    const hb = $('#btnHealth');
+    hb.classList.toggle('badge', hi.conds > 0 || hi.due > 0 || hi.prevent > 0);
+    hb.classList.toggle('sick', hi.score < 65);
+    hb.title = `Health ${Math.round(hi.score)}/100${hi.due ? ' — medicine due!' : hi.conds ? ' — not well' : ''}`;
     $('#petCount').textContent = this.game.pets.length > 1 ? `🐾${this.game.pets.length}` : '';
     // Keep bowl/litter levels on the dock buttons current.
     if (this._dockRoom === 'kitchen' || this._dockRoom === 'bathroom' || this._dockRoom === 'living') {
@@ -242,6 +248,7 @@ export class UI {
     $('#btnTalk').onclick = () => this.a.toggleTalk();
     $('#btnBlink').onclick = () => this.a.slowBlink();
     $('#btnGuide').onclick = () => { this.sound.click(); this.openGuide(); };
+    $('#btnHealth').onclick = () => { this.sound.click(); this.openHealth(); };
     $('#btnStore').onclick = () => { this.sound.click(); this.openStore(); };
     $('.profile').onclick = (e) => { if (e.target.closest('#bond')) return; this.sound.click(); this.openProfile(); };
     $('#where').onclick = () => { this.sound.click(); if (this._whereRoom != null) this.a.goto(this._whereRoom); };
@@ -285,6 +292,7 @@ export class UI {
   openCook() { openCook(this); }
   openWalk() { openWalk(this); }
   openTrain() { openTrain(this); }
+  openHealth() { openHealth(this); }
 
   // Shop ---------------------------------------------------------------------
   openShop(tab = 'food') {

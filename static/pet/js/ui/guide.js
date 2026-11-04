@@ -22,6 +22,7 @@ export function guideFor(game) {
     h('p', {}, `${name} is a ${breed.name}. ${breed.about}`),
     facts,
     breed.modelNote ? h('p', { class: 'muted small' }, `ℹ️ ${breed.modelNote}`) : null,
+    h('p', { class: 'small' }, `🩺 ${name}'s health runs in real time, even while the app is closed. Missed meals, no water, a dirty ${ham ? 'tank' : pet.species === 'dog' ? 'home or missed walks' : 'litter box'}, no grooming or play will make ${she === 'he' ? 'him' : 'her'} ill — just like a real pet. Watch for symptoms and use the 🩺 button to see the vet.`),
   ];
   if (ham) return hamsterGuide(game, breed, name, she, her, intro);
   return pet.species === 'dog' ? dogGuide(game, breed, name, she, her, intro) : catGuide(game, breed, name, she, her, intro);

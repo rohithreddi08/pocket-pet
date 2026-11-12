@@ -1,0 +1,99 @@
+{
+ "source": "Breed Health Score",
+ "sourceUrl": "https://breedhealthscore.com",
+ "licence": "CC-BY-4.0",
+ "attribution": "Breed Health Score (breedhealthscore.com); lifespan data from McMillan et al. 2024, CC-BY 4.0.",
+ "fetched": "2026-11-11",
+ "breeds": {
+  "husky": {
+   "name": "Siberian Husky",
+   "lifespan": 11.9,
+   "brachycephalic": false,
+   "conditions": [
+    "Progressive retinal atrophy",
+    "Cataracts",
+    "Corneal dystrophy",
+    "Hip dysplasia",
+    "Zinc-responsive dermatosis"
+   ],
+   "score": 68,
+   "grade": "B",
+   "url": "https://breedhealthscore.com/breed/siberian-husky/"
+  },
+  "malamute": {
+   "name": "Alaskan Malamute",
+   "lifespan": 11.3,
+   "brachycephalic": false,
+   "conditions": [
+    "Hip dysplasia",
+    "Chondrodysplasia",
+    "Progressive retinal atrophy",
+    "Polyneuropathy",
+    "Zinc-responsive dermatosis"
+   ],
+   "score": 63,
+   "grade": "B",
+   "url": "https://breedhealthscore.com/breed/alaskan-malamute/"
+  },
+  "shiba": {
+   "name": "Shiba Inu",
+   "lifespan": 14.6,
+   "brachycephalic": false,
+   "conditions": [
+    "Patellar luxation",
+    "Hip dysplasia",
+    "Glaucoma",
+    "Progressive retinal atrophy",
+    "Atopic dermatitis"
+   ],
+   "score": 93,
+   "grade": "A",
+   "url": "https://breedhealthscore.com/breed/shiba-inu/"
+  },
+  "akita": {
+   "name": "Akita",
+   "lifespan": 11.4,
+   "brachycephalic": false,
+   "conditions": [
+    "Hip dysplasia",
+    "Progressive retinal atrophy",
+    "Hypothyroidism",
+    "Sebaceous adenitis",
+    "Immune-mediated disease"
+   ],
+   "score": 64,
+   "grade": "B",
+   "url": "https://breedhealthscore.com/breed/akita/"
+  },
+  "germanshepherd": {
+   "name": "German Shepherd Dog",
+   "lifespan": 11.3,
+   "brachycephalic": false,
+   "conditions": [
+    "Hip dysplasia",
+    "Elbow dysplasia",
+    "Degenerative myelopathy",
+    "Exocrine pancreatic insufficiency",
+    "GDV (bloat)"
+   ],
+   "score": 59,
+   "grade": "C",
+   "url": "https://breedhealthscore.com/breed/german-shepherd-dog/"
+  },
+  "pug": {
+   "name": "Pug",
+   "lifespan": 11.6,
+   "brachycephalic": true,
+   "conditions": [
+    "BOAS",
+    "Pug dog encephalitis",
+    "Corneal ulcers",
+    "Skin fold dermatitis",
+    "Obesity"
+   ],
+   "score": 55,
+   "grade": "C",
+   "url": "https://breedhealthscore.com/breed/pug/"
+  }
+ }
+}

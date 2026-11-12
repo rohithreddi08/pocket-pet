@@ -1,0 +1,80 @@
+{
+ "source": "USDA FoodData Central (SR Legacy)",
+ "sourceUrl": "https://fdc.nal.usda.gov",
+ "via": "FoodData Central SR Legacy dataset (API unavailable)",
+ "licence": "Public domain (CC0)",
+ "fetched": "2026-11-11",
+ "unit": "kcal per 100 g",
+ "foods": {
+  "chicken": {
+   "kcal": 165,
+   "fdcId": 171477,
+   "description": "Chicken, broilers or fryers, breast, meat only, cooked, roasted"
+  },
+  "turkey": {
+   "kcal": 203,
+   "fdcId": 171506,
+   "description": "Turkey, Ground, cooked"
+  },
+  "fish": {
+   "kcal": 105,
+   "fdcId": 171956,
+   "description": "Fish, cod, Atlantic, cooked, dry heat"
+  },
+  "beef": {
+   "kcal": 230,
+   "fdcId": 171794,
+   "description": "Beef, ground, 90% lean meat / 10% fat, crumbles, cooked, pan-browned"
+  },
+  "egg": {
+   "kcal": 155,
+   "fdcId": 173424,
+   "description": "Egg, whole, cooked, hard-boiled"
+  },
+  "rice": {
+   "kcal": 130,
+   "fdcId": 168878,
+   "description": "Rice, white, long-grain, regular, enriched, cooked"
+  },
+  "oats": {
+   "kcal": 71,
+   "fdcId": 173905,
+   "description": "Cereals, oats, regular and quick, unenriched, cooked with water, without salt"
+  },
+  "pumpkin": {
+   "kcal": 20,
+   "fdcId": 168449,
+   "description": "Pumpkin, cooked, boiled, drained, without salt"
+  },
+  "sweetpot": {
+   "kcal": 76,
+   "fdcId": 168484,
+   "description": "Sweet potato, cooked, boiled, without skin"
+  },
+  "carrot": {
+   "kcal": 35,
+   "fdcId": 170394,
+   "description": "Carrots, cooked, boiled, drained, without salt"
+  },
+  "beans": {
+   "kcal": 35,
+   "fdcId": 169141,
+   "description": "Beans, snap, green, cooked, boiled, drained, without salt"
+  },
+  "berries": {
+   "kcal": 57,
+   "fdcId": 171711,
+   "description": "Blueberries, raw"
+  },
+  "broccoli": {
+   "kcal": 35,
+   "fdcId": 169967,
+   "description": "Broccoli, cooked, boiled, drained, without salt"
+  },
+  "cucumber": {
+   "kcal": 15,
+   "fdcId": 168409,
+   "description": "Cucumber, with peel, raw"
+  }
+ }
+}

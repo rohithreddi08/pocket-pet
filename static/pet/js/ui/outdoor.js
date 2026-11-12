@@ -10,7 +10,23 @@ import { h, $ } from './dom.js';
 import { TRICKS } from '../pet/Dog.js';
 import { FOODS } from '../state.js';
 import { thumbnail } from '../pet/factory.js';
-import { ageMonths, pronoun } from '../species.js';
+import { ageMonths, pronoun, breedOf } from '../species.js';
+import { WORLD } from '../world.js';
+import { addCondition } from '../health.js';
+
+/**
+ * The real weather for a walk (if the player turned local weather on): heat limits come from the breed — flat-faced
+ * dogs overheat far sooner (Breed Health Score marks them), thick double coats sooner than short ones.
+ */
+export function walkWeather(pet) {
+  const w = WORLD.weather;
+  if (!w) return null;
+  const b = breedOf(pet);
+  const brachy = !!b.health?.brachycephalic;
+  const hotAt = brachy ? 25 : b.coat === 'double' ? 27 : 29;
+  const feels = w.feels ?? w.temp;
+  return { ...w, feels, brachy, hotAt, hot: feels >= hotAt, veryHot: feels >= hotAt + 4, cold: feels <= 0, wet: !!(w.rain || w.snow) };
+}
 
 const EVENTS = ['sniff', 'pee', 'poop', 'dog', 'squirrel', 'water', 'person', 'sniff', 'pee'];
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -30,9 +46,22 @@ export function openWalk(ui) {
   ui.openSheet(`🦮 Walk ${name}`, h('div', { class: 'center' },
     h('p', {}, g.s.bladder < 0 ? `${name} really needs to go out!` : `${name} ${g.needs.play < 40 ? 'is restless and needs exercise.' : 'would love a walk.'}`),
     h('p', { class: 'muted small' }, `Today: ${w.day === new Date().toISOString().slice(0, 10) ? `${w.count} walk(s), ${w.minutes} min` : 'no walks yet'}. Real walks are longer — here time runs about 3× faster.`),
+    ...weatherNotes(g, name, her),
     h('div', { class: 'grid' }, ...opts.map(([min, label, sub]) => h('div', { class: 'card game-card', onclick: () => leash(ui, min) },
       h('div', { class: 'card-icon' }, min === 2 ? '🚽' : min === 5 ? '🦮' : '🌳'), h('div', { class: 'card-name' }, `${label} · ${min} min`), h('div', { class: 'card-sub' }, sub)))),
     h('p', { class: 'muted small' }, `Bring poop bags and water. Keep ${her} on the lead near roads — ${she}'ll pull at squirrels.`)));
+}
+
+function weatherNotes(g, name, her) {
+  const ww = walkWeather(g.pet);
+  if (!ww) return [h('p', { class: 'muted small' }, '🌍 Turn on local weather in Settings to walk in your real weather.')];
+  const out = [h('p', { class: 'small' }, `${ww.icon} ${ww.label} · ${Math.round(ww.temp)} °C, feels ${Math.round(ww.feels)} °C`)];
+  if (ww.veryHot) out.push(h('p', { class: 'bad small' }, `🥵 Too hot to walk ${name} now. ${ww.brachy ? 'Flat-faced breeds can’t pant off heat well — heatstroke can kill within an hour. ' : ''}Wait for the cool of dawn or dusk, and test the pavement with the back of your hand for 7 seconds.`));
+  else if (ww.hot) out.push(h('p', { class: 'bad small' }, `☀️ Warm for ${name}: keep it short and shady, bring water${ww.brachy ? ' — this breed overheats easily' : ''}.`));
+  if (ww.storm) out.push(h('p', { class: 'bad small' }, `⛈️ Thunderstorm — a quick toilet break only, and keep ${her} on the lead: scared dogs bolt.`));
+  else if (ww.wet) out.push(h('p', { class: 'small' }, `${ww.snow ? '🌨️ Snow' : '🌧️ Rain'} — take a towel; dry ${her} coat and paws when you're home.`));
+  if (ww.cold && breedOf(g.pet).coat !== 'double') out.push(h('p', { class: 'small' }, `🥶 Freezing — a short-coated dog may need a coat; keep walks brisk and short.`));
+  return out;
 }
 
 function leash(ui, minutes) {
@@ -173,6 +202,19 @@ function endWalk(ui) {
   ui.walk = null;
   $('#sheetClose').hidden = false;
   g.finishWalk(Math.round(done * 3), { social: w.social });           // ~3× compressed
+  // the weather it was out in
+  const ww = walkWeather(g.pet);
+  const realMin = done * 3;
+  let weatherNote = null;
+  if (ww?.wet) {
+    g.addNeed('groom', -12);
+    weatherNote = `${ww.snow ? '🌨️' : '🌧️'} ${g.s.name} came back soaked — towel-dry the coat and paws so the skin doesn't stay damp.`;
+  }
+  if (ww?.hot && realMin >= (ww.veryHot ? 5 : 12)) {
+    addCondition(g.pet, 'heatstroke', Math.min(0.9, 0.2 + 0.06 * (ww.feels - ww.hotAt) + (ww.brachy ? 0.15 : 0)));
+    g.save(); g.emit('health');
+    weatherNote = `🥵 ${g.s.name} is panting hard and drooling after walking in ${Math.round(ww.feels)} °C — signs of heat exhaustion. Cool water (not ice), shade, and see the vet (🩺) now.`;
+  }
   if (w.missed) g.addCoins(-5 * w.missed, 'fine');
   ui.a.endWalk(() => ui.hint(`${g.s.name} shook off and is happy to be home. ${g.needs.water < 60 ? 'Fresh water would be welcome!' : ''}`));
   ui.openSheet('🏠 Home again', h('div', { class: 'center' },
@@ -180,6 +222,7 @@ function endWalk(ui) {
     h('p', {}, `${Math.round(done * 10) / 10} min walk (≈${Math.round(done * 3)} real-life minutes). Exercise ↑ · trust ↑ · toilet ✓`),
     w.missed ? h('p', { class: 'bad' }, `−${5 * w.missed} 🪙 fine for leaving poo behind!`) : null,
     h('ul', { class: 'walk-log' }, ...w.events.slice(0, 6).map((e) => h('li', {}, e))),
+    weatherNote ? h('p', { class: 'bad' }, weatherNote) : null,
     h('p', { class: 'muted small' }, 'Wipe muddy paws when you get in — it keeps floors and paws clean.'),
     pawWipe(ui)));
 }

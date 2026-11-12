@@ -79,7 +79,8 @@ function pickRecipe(ui) {
   ui.openSheet('🍳 Cook for ' + (name || 'your pet'), h('div', {},
     h('p', { class: 'muted small' }, `Real food takes real time: about 4–6 minutes of washing, prepping, cooking and cooling. ${name} needs ~${dailyKcal(g.pet)} kcal a day (${weightKg(g.pet)} kg, ${mealsPerDay(g.pet)} meals).`),
     grid,
-    h('p', { class: 'muted small' }, '⚕️ Home-made diets need a vet-formulated supplement to be complete. Ask your vet before switching for good.')), { wide: true });
+    h('p', { class: 'muted small' }, '⚕️ Home-made diets need a vet-formulated supplement to be complete. Ask your vet before switching for good.'),
+    h('p', { class: 'muted small' }, 'Calories per 100 g come from ', h('a', { href: 'https://fdc.nal.usda.gov', target: '_blank', rel: 'noopener' }, 'USDA FoodData Central'), ', for each ingredient cooked the way the recipe cooks it.')), { wide: true });
 }
 
 function buyMissing(ui, r, then) {

@@ -147,3 +147,18 @@
 .hprev { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed #f0e3d3; }
 .hprev .warn { color: #e03131; font-weight: 600; }
 .health details { margin-top: 10px; }
+
+/* ---------- real world ---------- */
+#weatherChip { position: fixed; top: calc(14px + var(--top, 0px)); right: 132px; z-index: 6; border: 0; border-radius: 99px; padding: 5px 12px; background: rgba(255,255,255,.88); color: var(--ink); font-weight: 800; font-size: 13px; box-shadow: var(--shadow); cursor: pointer; }
+@media (max-width: 700px) { #weatherChip { top: calc(60px + var(--top, 0px)); right: 12px; } }
+.world-set { border-top: 1px solid #eadfd3; padding-top: 8px; display: grid; gap: 6px; }
+.world-set h4 { margin: 4px 0; }
+.world-set .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.world-set .row input { flex: 1; min-width: 140px; }
+
+/* ---------- walks on the 3D street: the walk sheet becomes a small card ---------- */
+.sheet.walk3d { background: none; pointer-events: none; place-items: end end; padding: 12px; }
+.sheet.walk3d .sheet-card { pointer-events: auto; width: min(92vw, 360px) !important; max-height: 52vh; overflow: auto; background: rgba(255, 250, 245, .94); }
+.sheet.walk3d .walk-scene { display: none; }
+.sheet.walk3d .walk-log { max-height: 90px; overflow: auto; }
+body.walking #dock, body.walking #roomTitle, body.walking #navL, body.walking #navR, body.walking #status { display: none !important; }

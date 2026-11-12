@@ -32,3 +32,15 @@ hamster.glb
 The Somali cat (../../cat/assets/cat_rigged.glb) is "Somali Cat Animated
 ver 1.2" by DreamNoms — CC BY 4.0:
   https://sketchfab.com/3d-models/somali-cat-animated-ver-12-e185c3fd92b64c32b4515a32b29252fc
+
+street/ — the street outside the flat (js/world/Outdoor.js); everything else
+there (buildings, auto-rickshaws, road, kerbs, power lines) is built in code.
+  car.glb       "Car Hatchback" by Kay Lousberg — CC0 1.0 — https://poly.pizza/m/BG0KAhmGDt
+  lamp.glb      "Streetlight" by Kay Lousberg — CC0 1.0 — https://poly.pizza/m/vPFSLYh6sg
+  bus.glb       "Bus" by Poly by Google — CC-BY 3.0 — https://poly.pizza/m/4CPpvEmrMoF
+  scooter.glb   "Scooter" by Poly by Google — CC-BY 3.0 — https://poly.pizza/m/eHdEFPwUfCt
+  streetdog.glb "Dog" by Poly by Google — CC-BY 3.0 — https://poly.pizza/m/eDmSVe4TKwF
+  cart.glb      "Street Vendor Cart" by Alan Zimmerman — CC-BY 3.0 — https://poly.pizza/m/f_LuAcP2_Yh
+  tree.glb      "Tree" by Marc Solà — CC-BY 3.0 — https://poly.pizza/m/6Yjt8nIwLsD
+  CC-BY 3.0: https://creativecommons.org/licenses/by/3.0/
+The sky uses three.js's Sky (Preetham model), MIT licence.

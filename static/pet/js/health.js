@@ -132,6 +132,27 @@ export const CONDITIONS = {
     cause: 'Infection caught from other dogs; vaccination reduces it.', treat: { kind: 'course', what: 'Rest + cough medicine', price: 40, doses: 5, every: 24 },
     advice: 'Keep vaccinations up to date.',
   },
+  heatstroke: {
+    species: ['dog'], name: 'Heat exhaustion', icon: '🥵', weight: 85, worsen: 0.25, heal: 0.12,
+    symptoms: ['heavy, noisy panting', 'drooling', 'wobbly and weak'],
+    cause: 'Exercise in hot weather. Flat-faced breeds (pugs, bulldogs) overheat far sooner. Heatstroke can kill within an hour.',
+    treat: { kind: 'procedure', what: 'Cooling + fluids at the vet', price: 60 },
+    advice: 'In the heat, walk at dawn or dusk; test the pavement with the back of your hand for 7 seconds; carry water.',
+  },
+  jointpain: {
+    species: ['dog'], name: 'Joint pain (hip/elbow dysplasia)', icon: '🦴', weight: 35, worsen: 0.001, heal: 0.01, breedRisk: true,
+    symptoms: ['stiff after resting', 'reluctant to jump or climb stairs', 'bunny-hopping'],
+    cause: 'Hereditary in this breed (Breed Health Score); extra weight and age make it worse.',
+    treat: { kind: 'course', what: 'Pain relief + joint support, and a lean body weight', price: 55, doses: 7, every: 24 },
+    advice: 'Keep your dog lean, use gentle regular exercise, and ask your vet about joint checks for this breed.',
+  },
+  noisefear: {
+    name: 'Fear of loud noises', icon: '🎆', weight: 30, worsen: 0.1, heal: 0.3, selfHeal: true,
+    symptoms: { cat: ['hiding under furniture', 'ears flat, pupils wide', 'won’t come out'], dog: ['trembling and panting', 'pacing and whining', 'trying to escape or hide'], hamster: ['frozen still', 'hiding in the nest', 'jumpy'] },
+    cause: 'Fireworks or thunder. Many pets are terrified of the bangs.',
+    treat: { kind: 'care', what: 'Stay calmly nearby, close windows and curtains, give a safe hiding spot — never punish fear' },
+    advice: 'Before fireworks nights: keep pets indoors, close curtains, play calm background sound, and talk to your vet if the fear is severe.',
+  },
   resp: {
     species: ['hamster'], name: 'Respiratory infection', icon: '🤧', weight: 50, worsen: 0.012, heal: 0.02, random: 0.0002,
     symptoms: ['sneezing', 'clicking breathing', 'wet nose'],
@@ -225,6 +246,7 @@ export function tickHealth(pet, breed, hours, ctx) {
   track('unbrushed', n.groom < 20);
   track('bored', n.play < 15);
   track('held', sp === 'dog' && !pet.out && pet.bladder < -30);
+  nl.scared = ctx.scared ? (nl.scared || 0) + hours : Math.max(0, (nl.scared || 0) - hours * 2);
   nl.nochew = sp === 'hamster' ? (Date.now() - (h.lastChewAt || Date.now())) / H : 0;
 
   // --- causes → conditions (thresholds in real hours)
@@ -239,6 +261,13 @@ export function tickHealth(pet, breed, hours, ctx) {
   if (sp === 'dog' && nl.unbrushed > 72) started.push(add(pet, 'hotspots'));
   if (nl.bored > 24) started.push(add(pet, 'stress'));
   if (sp === 'hamster' && nl.nochew > 24 * 14) started.push(add(pet, 'teeth'));
+  if (nl.scared > 0.25) started.push(add(pet, 'noisefear', 0.2));
+  // hereditary joint disease in breeds known for it (Breed Health Score data); more likely with age and extra weight
+  const bh = breed.health?.conditions || [];
+  if (sp === 'dog' && bh.some((c) => /hip dysplasia|elbow dysplasia|osteoarthritis/i.test(c)) && ctx.stage !== 'baby') {
+    const p = hours * 0.000005 * (ctx.stage === 'senior' ? 4 : 1) * (h.bcs >= 7 ? 3 : 1);   // ~1%/yr lean adult, ~4%/month obese senior
+    if (Math.random() < p) started.push(add(pet, 'jointpain'));
+  }
   if (sp !== 'hamster' && (Date.now() - h.parasiteAt) / DAY > 45 && Math.random() < hours * 0.01) started.push(add(pet, 'fleas'));
   // Infections: rare; much more likely when unvaccinated, run-down, very young or old.
   const vaccinated = sp === 'hamster' || (Date.now() - h.vaccinatedAt) / DAY < 365;
@@ -260,6 +289,7 @@ export function tickHealth(pet, breed, hours, ctx) {
   // --- progress existing conditions
   const causeGone = {
     dehydration: n.water > 40, malnutrition: n.food > 40 && nl.hungry === 0, stress: n.play > 50 && nl.bored === 0,
+    noisefear: !ctx.scared && (nl.scared || 0) === 0,
     matted: false, teeth: false,
   };
   for (const [id, c] of Object.entries(h.conds)) {
@@ -289,6 +319,13 @@ export function tickHealth(pet, breed, hours, ctx) {
   target = clamp(target);
   h.score = clamp(h.score + (target - h.score) * Math.min(1, hours * 0.6));
   return started.filter(Boolean);
+}
+
+/** Start a condition from outside the hourly tick (e.g. heat exhaustion after a hot walk). */
+export function addCondition(pet, id, sev = 0.2) {
+  const c = pet.health.conds[id];
+  if (c) { c.sev = Math.max(c.sev, sev); return null; }
+  return addCond(pet, id, sev);
 }
 
 function remove(pet, id, recovered = false) {

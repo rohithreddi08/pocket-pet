@@ -165,33 +165,60 @@ export function windowSky() {
   const t = tex(c);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   const stars = Array.from({ length: 40 }, () => [Math.random() * 256, Math.random() * 170, Math.random() * 1.6 + 0.4]);
-  function redraw(hour) {
-    const night = hour < 6 || hour >= 20;
-    const dusk = (hour >= 17 && hour < 20) || (hour >= 6 && hour < 8);
+  const drops = Array.from({ length: 70 }, () => [Math.random() * 256, Math.random() * 256, 8 + Math.random() * 10]);
+  /**
+   * hour: local time; sun: {rise, set} hours (real ones once the weather knows your place);
+   * w: describe() of the current weather or null ({cloud 0..1, rain, snow, fog, storm}).
+   */
+  function redraw(hour, sun = { rise: 6.5, set: 19 }, w = null) {
+    const night = hour < sun.rise - 0.4 || hour >= sun.set + 0.6;
+    const dusk = !night && (Math.abs(hour - sun.set) < 1.1 || Math.abs(hour - sun.rise) < 1.1);
+    const cloud = w?.cloud ?? 0.25;
+    const grey = Math.min(1, cloud * 0.9 + (w?.rain ? 0.2 : 0) + (w?.storm ? 0.25 : 0));
     const grd = g.createLinearGradient(0, 0, 0, 256);
     if (night) { grd.addColorStop(0, '#0b1433'); grd.addColorStop(1, '#2a3a6e'); }
     else if (dusk) { grd.addColorStop(0, '#5a6fb5'); grd.addColorStop(0.6, '#f2a07b'); grd.addColorStop(1, '#ffd29a'); }
     else { grd.addColorStop(0, '#6db7f2'); grd.addColorStop(1, '#cfeaff'); }
     g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+    // overcast skies wash the colour out toward grey
+    if (grey > 0.05) { g.fillStyle = night ? `rgba(30,34,44,${grey * 0.7})` : `rgba(150,158,168,${grey * 0.75})`; g.fillRect(0, 0, 256, 256); }
     if (night) {
-      g.fillStyle = '#fff';
-      for (const [x, y, r] of stars) { g.globalAlpha = 0.5 + Math.random() * 0.5; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
-      g.globalAlpha = 1;
-      g.fillStyle = '#fdf6d8'; g.beginPath(); g.arc(190, 60, 22, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#0b1433'; g.beginPath(); g.arc(180, 54, 20, 0, Math.PI * 2); g.fill();
-    } else {
-      g.fillStyle = dusk ? '#ffcf7a' : '#fff6c4';
-      g.beginPath(); g.arc(dusk ? 60 : 190, dusk ? 170 : 60, 26, 0, Math.PI * 2); g.fill();
-      g.fillStyle = 'rgba(255,255,255,0.9)';
-      for (const [x, y] of [[50, 70], [140, 110]]) {
-        g.beginPath(); g.ellipse(x, y, 34, 14, 0, 0, Math.PI * 2); g.ellipse(x + 22, y - 8, 22, 14, 0, 0, Math.PI * 2); g.fill();
+      if (cloud < 0.6) {
+        g.fillStyle = '#fff';
+        for (const [x, y, r] of stars) { g.globalAlpha = (0.5 + Math.random() * 0.5) * (1 - cloud); g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+        g.globalAlpha = 1;
+        g.fillStyle = '#fdf6d8'; g.beginPath(); g.arc(190, 60, 22, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#0b1433'; g.beginPath(); g.arc(180, 54, 20, 0, Math.PI * 2); g.fill();
       }
+    } else if (cloud < 0.8) {
+      g.fillStyle = dusk ? '#ffcf7a' : '#fff6c4';
+      const morning = Math.abs(hour - sun.rise) < Math.abs(hour - sun.set);
+      g.beginPath(); g.arc(dusk ? (morning ? 196 : 60) : 190, dusk ? 170 : 60, 26, 0, Math.PI * 2); g.fill();
+    }
+    // clouds: more and greyer as cover rises
+    const n = 2 + Math.round(cloud * 5);
+    const cc = night ? `rgba(90,98,120,${0.5 + cloud * 0.4})` : (grey > 0.5 ? `rgba(200,204,210,${0.85})` : 'rgba(255,255,255,0.9)');
+    g.fillStyle = cc;
+    for (let i = 0; i < n; i += 1) {
+      const x = (i * 71 + 30) % 250; const y = 40 + ((i * 53) % 110);
+      g.beginPath(); g.ellipse(x, y, 34 + cloud * 14, 14 + cloud * 6, 0, 0, Math.PI * 2); g.ellipse(x + 22, y - 8, 22 + cloud * 8, 14, 0, 0, Math.PI * 2); g.fill();
     }
     // distant hills + tree line
     g.fillStyle = night ? '#1d2c3f' : '#7fb069';
     g.beginPath(); g.moveTo(0, 256); g.quadraticCurveTo(70, 180, 140, 215); g.quadraticCurveTo(200, 240, 256, 190); g.lineTo(256, 256); g.fill();
     g.fillStyle = night ? '#15212f' : '#5c8f4c';
     g.beginPath(); g.moveTo(0, 256); g.quadraticCurveTo(120, 205, 256, 240); g.lineTo(256, 256); g.fill();
+    if (w?.snow) { g.fillStyle = 'rgba(255,255,255,0.75)'; g.fillRect(0, 226, 256, 30); }
+    // rain streaks, snowflakes, fog
+    if (w?.rain) {
+      g.strokeStyle = 'rgba(210,225,240,0.55)'; g.lineWidth = 1.2;
+      for (const [x, y, l] of drops.slice(0, Math.round(drops.length * w.rain))) { g.beginPath(); g.moveTo(x, y); g.lineTo(x - 3, y + l); g.stroke(); }
+    }
+    if (w?.snow) {
+      g.fillStyle = 'rgba(255,255,255,0.9)';
+      for (const [x, y] of drops.slice(0, Math.round(drops.length * w.snow))) { g.beginPath(); g.arc(x, y, 1.8, 0, Math.PI * 2); g.fill(); }
+    }
+    if (w?.fog) { g.fillStyle = 'rgba(225,228,232,0.55)'; g.fillRect(0, 0, 256, 256); }
     t.needsUpdate = true;
     return night;
   }

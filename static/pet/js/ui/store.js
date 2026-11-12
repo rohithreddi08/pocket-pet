@@ -86,7 +86,7 @@ export function openProfile(ui) {
     h('div', { class: 'me' },
       h('div', {}, h('b', {}, `Level ${s.level}`), h('small', {}, `${s.xp} XP`)),
       h('div', {}, h('b', {}, `🪙 ${s.coins}`), h('small', {}, 'coins')),
-      h('div', {}, h('b', {}, `${g.pets.length}/${MAX_PETS}`), h('small', {}, 'pets'))),
+      h('div', {}, h('b', {}, `${g.pets.length}/${Number.isFinite(MAX_PETS) ? MAX_PETS : '∞'}`), h('small', {}, 'pets'))),
     h('h3', { class: 'sec' }, '🐾 My pets'),
     h('p', { class: 'muted small' }, 'One pet is at home on screen at a time. The others keep living their routine — eating from their bowls, napping — so check on everyone!'),
     list,
@@ -176,6 +176,9 @@ function meet(ui, l, back) {
     h('p', { class: 'small muted' }, `Adult weight ${l.species === 'hamster' ? `${Math.round(b.kg[0] * 1000)}–${Math.round(b.kg[1] * 1000)} g` : `${b.kg[0]}–${b.kg[1]} kg`}. ${l.species === 'dog' ? 'Needs daily walks, training and company.'
       : l.species === 'hamster' ? 'Needs a tank of at least 100 × 50 cm with deep bedding, a solid wheel (28 cm+ for a Syrian), a hide and a sand bath. Lives alone. Lifespan only 2–3 years.'
         : 'Needs a litter box, scratching post and daily play.'} ${she[0].toUpperCase() + she.slice(1)} will grow up in real time — you'll raise ${her} from ${ageLabel(l.months)}.`),
+    (b.health ? h('p', { class: 'small' }, h('b', {}, '🧬 Breed health: '),
+      `median lifespan ${b.health.lifespan} years · common conditions: ${b.health.conditions.join(', ')}${b.health.brachycephalic ? ' · flat-faced: breathing problems and overheating' : ''} · health grade ${b.health.grade}. `,
+      h('a', { href: b.health.url || 'https://breedhealthscore.com', target: '_blank', rel: 'noopener' }, 'Breed Health Score')) : null),
     b.modelNote ? h('p', { class: 'small muted' }, `ℹ️ ${b.modelNote}`) : null,
     h('label', { class: 'form' }, 'Name', nameIn),
     h('div', { class: 'row' }, adopt, h('button', { onclick: back }, 'Back'))), { wide: true });

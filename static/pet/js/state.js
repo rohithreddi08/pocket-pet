@@ -17,10 +17,11 @@ import {
   defaultHealth, normalizeHealth, tickHealth, vitality, worst, healthLabel, symptomsOf, CONDITIONS, VET,
   diagnose, treat, giveDose, dosesDue, prevention,
 } from './health.js';
+import {DEV, DEV_COINS} from './dev.js';
 
 const KEY = 'pocketpet.save.v1';
 const MAX_OFFLINE_HOURS = 12;
-export const MAX_PETS = 4;
+export const MAX_PETS = DEV.unlimitedPets ? Infinity : 4;   // dev.js can lift the limit
 
 // Per real hour, for an adult.
 const RATES = {
@@ -106,6 +107,10 @@ function clamp(v, lo = 0, hi = 100) { return Math.max(lo, Math.min(hi, v)); }
 export function today() { return new Date().toISOString().slice(0, 10); }
 
 /** 0..1: how active a cat tends to be at this hour (crepuscular: dawn + dusk peaks). */
+// Sunrise and sunset (hours). Defaults until world.js knows the real ones for your place.
+const SUN = { rise: 6.5, set: 19 };
+export function setSun({ rise, set }) { if (Number.isFinite(rise) && Number.isFinite(set)) Object.assign(SUN, { rise, set }); }
+
 export function activityAt(hour, species = 'cat') {
   const peak = (h, c, w) => {
     const d = ((h - c + 36) % 24) - 12;          // signed hours from c, wrapped to [-12, 12)
@@ -113,18 +118,19 @@ export function activityAt(hour, species = 'cat') {
   };
   if (species === 'hamster') {
     // Hamsters are nocturnal: up from dusk, busiest around midnight, asleep by day.
-    return Math.min(1, 0.06 + 0.94 * Math.max(peak(hour, 23, 2.6), 0.8 * peak(hour, 3.5, 1.8)));
+    return Math.min(1, 0.06 + 0.94 * Math.max(peak(hour, SUN.set + 4, 2.6), 0.8 * peak(hour, SUN.rise - 3, 1.8)));
   }
   if (species === 'dog') {
     // Dogs fit their people's day: up in the morning and evening, sleep at night.
     const night = hour < 6 || hour >= 23;
-    return night ? 0.15 : Math.min(1, 0.45 + 0.55 * Math.max(peak(hour, 7.5, 1.8), peak(hour, 18.5, 2.2)));
+    return night ? 0.15 : Math.min(1, 0.45 + 0.55 * Math.max(peak(hour, Math.max(6.5, SUN.rise + 1), 1.8), peak(hour, SUN.set, 2.2)));
   }
-  return Math.min(1, 0.3 + 0.7 * Math.max(peak(hour, 6.5, 1.6), peak(hour, 19, 2)));
+  // cats are crepuscular: their peaks follow the real dawn and dusk
+  return Math.min(1, 0.3 + 0.7 * Math.max(peak(hour, SUN.rise, 1.6), peak(hour, SUN.set, 2)));
 }
 
 // Keys that belong to you (the profile); everything else belongs to a pet.
-const SHARED = new Set(['v', 'pets', 'activeId', 'createdAt', 'coins', 'xp', 'level', 'inventory', 'pantry', 'meals',
+const SHARED = new Set(['v', 'pets', 'activeId', 'createdAt', 'coins', 'devSavedCoins', 'xp', 'level', 'inventory', 'pantry', 'meals',
   'cooking', 'hats', 'themes', 'theme', 'room', 'daily', 'best', 'settings', 'adopted', 'firstAdoptFree']);
 
 function defaultPet(over = {}) {
@@ -231,6 +237,7 @@ export class Game extends Emitter {
   constructor() {
     super();
     this.p = this._load();
+    this._devCoins();
     this._bind();
     this.offlineHours = this._catchUp(this.pet);
     for (const other of this.p.pets) if (other !== this.pet) this._catchUp(other);
@@ -412,6 +419,21 @@ export class Game extends Emitter {
     return hours;
   }
 
+  /**
+   * Developer mode (dev.js): keep the wallet full while it's on, putting the real balance aside; give the real
+   * balance back when it's switched off.
+   */
+  _devCoins() {
+    const p = this.p;
+    if (DEV.unlimitedCoins) {
+      if (p.devSavedCoins == null) p.devSavedCoins = p.coins;
+      if (p.coins !== DEV_COINS) p.coins = DEV_COINS;
+    } else if (p.devSavedCoins != null) {
+      p.coins = p.devSavedCoins;
+      delete p.devSavedCoins;
+    }
+  }
+
   /** Call every frame with real seconds. */
   tick(dt, { focus = false, asleep = false, out = false } = {}) {
     const h = (dt / 3600) * (focus ? 0.5 : 1);
@@ -421,12 +443,15 @@ export class Game extends Emitter {
     n.water = clamp(n.water + r.water * h);
     n.play = clamp(n.play + r.play * h * (asleep ? 0.2 : 1));
     n.groom = clamp(n.groom + r.groom * h);
+    if (DEV.unlimitedCoins && this.p.coins !== DEV_COINS) { this._devCoins(); this.emit('change'); }
     n.energy = clamp(n.energy + (asleep ? r.sleep : r.awake * vitality(this.pet).energy) * h);
     if (!out) this.s.bladder -= dt / 60;
     // Health runs on real time (checked every few seconds).
     this._healthAcc = (this._healthAcc || 0) + dt;
     if (this._healthAcc > 5) {
-      const ids = tickHealth(this.pet, this.breed, this._healthAcc / 3600, { stage: this.stage });
+      const n = this.noise;
+      const scared = !!(n?.active && !this.pet.out && Date.now() - (n.comfortedAt || 0) > 5 * 60000);
+      const ids = tickHealth(this.pet, this.breed, this._healthAcc / 3600, { stage: this.stage, scared });
       this._healthAcc = 0;
       if (ids.length) this.emit('sick', ids);
       this.emit('health');

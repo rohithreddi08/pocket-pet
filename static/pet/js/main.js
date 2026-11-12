@@ -8,10 +8,12 @@ import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { normalizeName } from '../../cat/BoneMap.js';
 import { House, ROOMS } from './world/House.js';
+import { Outdoor } from './world/Outdoor.js';
 import { Particles } from './world/Particles.js';
 import { Accessories } from './pet/Accessories.js';
 import { buildPet, disposePet } from './pet/factory.js';
-import { Game, FOODS, THEMES, vitality, symptomsOf, CONDITIONS } from './state.js';
+import { Game, FOODS, THEMES, vitality, symptomsOf, CONDITIONS, setSun } from './state.js';
+import { WORLD, onWorld, startWorld, noiseNow, fireworksTonight } from './world.js';
 import { breedOf, pronoun } from './species.js';
 import { Sound, Voice, audioContext } from './audio.js';
 import { UI } from './ui/ui.js';
@@ -46,6 +48,9 @@ async function boot() {
 
   progress(0.1, 'Tidying the house…');
   const house = new House(scene);
+  // The street outside: drawn first each frame, seen through the window openings; walks happen there.
+  const outdoor = new Outdoor(renderer);
+  scene.background = null;
   const fx = new Particles(scene);
 
   try {
@@ -306,6 +311,14 @@ async function boot() {
       ui.toast(on ? '🚰 Tap dripping — Somalis are famously fascinated by water' : 'Tap off');
     },
     slowBlink: () => {
+      if (game.noise?.active) {
+        game.noise.comfortedAt = Date.now();
+        game.addBond(0.5);
+        sound.purr?.(false);
+        ui.toast(`🫂 You stay calmly near ${name()} and speak softly. A safe hiding spot and a calm person help — never force a cuddle or scold fear.`, 'big');
+        if (!pet.outside && !pet.sleeping) pet.interrupt?.(false);
+        return;
+      }
       if (isHam()) {
         const r = pet.call();
         ui.toast(r === 'ok' ? '✋ You rest your hand in the tank and keep still…'
@@ -369,6 +382,7 @@ async function boot() {
       pet.goOut(onGone);
     },
     endWalk: (onBack) => {
+      stopWalk3d();
       goRoom(0);
       pet.comeHome(onBack);
     },
@@ -438,6 +452,26 @@ async function boot() {
     voice.parrot = game.s.settings.parrot;
   });
   game.on('reset', async () => { applyTheme('cream'); await spawnPet(); });
+
+  // The real world: sunrise/sunset + weather in the window, festival fireworks and thunder.
+  onWorld((w) => {
+    house.setSky(w.sun, w.weather);
+    outdoor.setTime(new Date(), w.sun, w.weather);
+    setSun(w.sun);
+    ui.weather(w.weather);
+  });
+  startWorld(game).then(() => {
+    const tonight = fireworksTonight();
+    const key = `pocketpet.fwwarn.${new Date().toDateString()}`;
+    let warned = false;
+    try { warned = !!localStorage.getItem(key); localStorage.setItem(key, '1'); } catch { /* private mode */ }
+    if (tonight && !warned && new Date().getHours() < tonight.from) {
+      setTimeout(() => ui.hint(`Tonight: ${tonight.name}. Keep ${name()} indoors, close the windows and curtains, and give ${she('obj')} a safe place to hide.`), 5000);
+    }
+  });
+  game.noise = { active: false, comfortedAt: 0 };
+  let nextBang = 2;
+  let noiseKind = null;
   // Health: new symptoms, and what happened while you were away.
   game.on('sick', (ids) => {
     ui.toast(`🤒 ${symptomLine(ids[0])}. Open 🩺 Health to see what to do.`, 'big');
@@ -611,6 +645,24 @@ async function boot() {
     }, 1500);
   }
 
+  // ---- walks on the real street
+  let walk3d = false;
+  let skyTimer = 0;
+  const headTmp = new THREE.Vector3();
+  function startWalk3d() {
+    walk3d = true;
+    outdoor.startWalk(root);
+    document.getElementById('sheet').classList.add('walk3d');
+    document.body.classList.add('walking');
+  }
+  function stopWalk3d() {
+    if (!walk3d) return;
+    walk3d = false;
+    outdoor.stopWalk();
+    document.getElementById('sheet').classList.remove('walk3d');
+    document.body.classList.remove('walking');
+  }
+
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.1);
     elapsed += dt;
@@ -649,6 +701,29 @@ async function boot() {
       if (f.t >= 1) { scene.remove(f.s); f.s.material.map.dispose(); f.s.material.dispose(); flying.splice(i, 1); }
     }
 
+    // Fireworks or thunder outside: bangs at random, the pet gets frightened, you can comfort it.
+    const noise = noiseNow();
+    game.noise.active = !!noise;
+    if (noise && noise.kind !== noiseKind) {
+      noiseKind = noise.kind;
+      ui.hint(`${noise.kind === 'thunder' ? '⛈️ A thunderstorm outside' : `🎆 ${noise.name} outside`} — ${name()} is frightened. Close the curtains, stay calm nearby (${isDog() ? '📣' : isHam() ? '✋' : '😌'} button to comfort), and let ${she('obj')} hide.`);
+    } else if (!noise) noiseKind = null;
+    if (noise) {
+      nextBang -= dt;
+      if (nextBang <= 0) {
+        nextBang = noise.kind === 'thunder' ? 9 + Math.random() * 18 : 2.5 + Math.random() * 7;
+        sound.boom(noise.kind);
+        if (noise.kind === 'thunder') outdoor.flash();
+        const comforted = Date.now() - (game.noise.comfortedAt || 0) < 5 * 60000;
+        if (!pet.outside && (!pet.act || pet.act.interruptible !== false) && Math.random() < (comforted ? 0.25 : 0.7)) {
+          if (isHam()) { pet._fleeToNest?.(); }
+          else if (isDog()) { pet.say?.('whine'); pet.interrupt?.(true); pet.goToRoom?.(room, () => {}); }
+          else if (!pet.sleeping) { pet.interrupt?.(true); pet._startNap?.(3); }
+          if (pet.status !== undefined && !pet.sleeping) pet.status = isHam() ? 'Frozen, then bolted into the nest' : isDog() ? 'Trembling and panting at the bangs' : 'Hiding — scared of the bangs';
+        }
+      }
+    }
+
     // Illness shows in behaviour: slower, sleepier; very ill pets just lie down.
     const vit = vitality(game.pet);
     if (pet._baseSpeed0 != null) pet.baseSpeed = pet._baseSpeed0 * vit.speed;
@@ -673,13 +748,24 @@ async function boot() {
 
     voice.update(dt);
     layer.restore();
+    // the sun moves: re-place it every minute
+    skyTimer -= dt;
+    if (skyTimer <= 0) { skyTimer = 60; outdoor.setTime(new Date(), WORLD.sun, WORLD.weather); }
+    const walkingOut = !!(ui.walk?.out && pet.outside && isDog());
+    if (walkingOut && !walk3d) startWalk3d();
+    else if (!walkingOut && walk3d) stopWalk3d();
+    if (walk3d) {
+      const res = outdoor.walkUpdate(dt, ui.walk?.pending?.ev || null, pet.len, pet.headPosition(headTmp), camera);
+      built.rig?.update(res.pose, 0, res.speed, dt);
+    }
     pet.update(dt);
     house.update(dt, elapsed);
     house.updateTap(dt, fx);
     fx.update(dt);
     laserDot.scale.setScalar(1 + Math.sin(elapsed * 20) * 0.15);
 
-    // Camera frames YOUR room — or, for a hamster, a close-up of its tank.
+    // Camera frames YOUR room — or, for a hamster, a close-up of its tank. (On a walk, the street camera leads.)
+    if (!walk3d) {
     const portrait = camera.aspect < 0.9;
     const tank = isHam() && room === 0 ? house.cage.center : null;
     camX += ((tank ? tank.x : house.rooms[room].cx) - camX) * Math.min(1, dt * 3);
@@ -692,10 +778,11 @@ async function boot() {
       lerp(portrait ? 1.55 : 1.75, c.y + (portrait ? 1.2 : 1.05), camZoom) + parallax.y * 0.1,
       lerp(camDist, c.z + (portrait ? 5.2 : 4.4), camZoom));
     camera.lookAt(camX, lerp(portrait ? 0.85 : 0.95, c.y - 0.05, camZoom), lerp(0, c.z, camZoom));
+    }
 
     // Thought bubble over the head when a need is low and the pet is here.
     const mood = game.mood();
-    const lowIcon = { health: '🤒', food: isHam() ? '🌾' : '🍗', water: '💧', energy: '😴', play: isDog() ? '🦮' : isHam() ? '🎡' : '🧶', groom: isHam() ? '⏳' : '🪮', litter: isDog() ? '🧻' : isHam() ? '🧹' : '🚽', walk: '🚪' }[mood.low[0]];
+    const lowIcon = { health: game.noise?.active ? '😨' : '🤒', food: isHam() ? '🌾' : '🍗', water: '💧', energy: '😴', play: isDog() ? '🦮' : isHam() ? '🎡' : '🧶', groom: isHam() ? '⏳' : '🪮', litter: isDog() ? '🧻' : isHam() ? '🧹' : '🚽', walk: '🚪' }[mood.low[0]];
     if (lowIcon && pet.inView && !pet.sleeping && !pet.reactions.length) {
       pet.headPosition(headV).add(new THREE.Vector3(0, isHam() ? 0.18 : 0.3 + pet.len * 0.15, 0)).project(camera);
       ui.thought(lowIcon, (headV.x * 0.5 + 0.5) * window.innerWidth, (-headV.y * 0.5 + 0.5) * window.innerHeight);
@@ -709,7 +796,15 @@ async function boot() {
       ui.status(pet, room);
     }
 
-    renderer.render(scene, camera);
+    // the street first (through the windows), then the flat over it
+    outdoor.update(dt, walk3d ? root.position : { x: camX, z: -18 });
+    renderer.autoClear = false;
+    renderer.clear();
+    outdoor.render(camera);
+    if (!walk3d) {
+      renderer.clearDepth();
+      renderer.render(scene, camera);
+    }
     requestAnimationFrame(frame);
   }
 
@@ -729,7 +824,7 @@ async function boot() {
 
   document.addEventListener('visibilitychange', () => { if (document.hidden) game.save(); });
   window.addEventListener('pagehide', () => game.save());
-  window.pocketPet = { game, pet, house, rig: built.rig, voice, scene, camera, actions, ui, get current() { return pet; } };
+  window.pocketPet = { game, pet, house, outdoor, rig: built.rig, voice, scene, camera, actions, ui, get current() { return pet; } };
 }
 
 boot().catch((e) => {

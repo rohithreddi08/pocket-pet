@@ -337,6 +337,26 @@ export class Sound {
   }
 
   /** Cooking sounds. */
+  // --- loud noises outside: a distant firework (thump + crackle) or a roll of thunder
+  boom(kind = 'fireworks') {
+    if (!this._ok()) return;
+    const c = ctx; const t = c.currentTime;
+    const thunder = kind === 'thunder';
+    const src = c.createBufferSource(); src.buffer = this.noise;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(thunder ? 260 : 420, t);
+    lp.frequency.exponentialRampToValueAtTime(thunder ? 70 : 90, t + (thunder ? 2.4 : 0.7));
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(thunder ? 0.5 : 0.45, t + (thunder ? 0.25 : 0.015));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (thunder ? 2.8 : 0.9));
+    src.connect(lp).connect(g).connect(master); src.start(t, Math.random()); src.stop(t + 3);
+    if (!thunder) {
+      // the crackle after the bang
+      for (let i = 0; i < 9; i += 1) this._tone(1800 + Math.random() * 2400, 0.02, 'square', 0.03, 0.35 + i * 0.05 + Math.random() * 0.04);
+    }
+  }
+
   // --- hamsters: mostly silent; squeak when scared, tiny crunches, a squeaky wheel
   squeak(n = 1) { for (let i = 0; i < n; i += 1) this._tone(2400 + Math.random() * 600, 0.07, 'sine', 0.18, i * 0.11, 3200); }
   crunch() { for (let i = 0; i < 3; i += 1) this._tone(1800 + Math.random() * 900, 0.025, 'square', 0.05, i * 0.07); }

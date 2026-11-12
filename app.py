@@ -11,11 +11,32 @@ The original Streamlit version is kept in ``app_classic.py``.
 """
 from __future__ import annotations
 
+import threading
+
 import streamlit as st
+
+from apis_sync import sync as sync_reference_data
+from stamp_version import write as stamp_game_version
+
+
+@st.cache_resource
+def _start_data_sync() -> bool:
+    """Once per server start: refresh breed health + food energy data (apis_sync.py) in the background, then
+    re-stamp the game so browsers pick the new files up. Never blocks the page."""
+    def run():
+        sync_reference_data()
+        stamp_game_version()
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
 
 GAME_URL = "/app/static/pet/index.html"
 
 st.set_page_config(page_title="Pocket Pet", page_icon="🐾", layout="wide")
+
+_start_data_sync()
+# Tell browsers when the game's files changed (see stamp_version.py).
+stamp_game_version()
 
 # Let the game use the whole page.
 st.markdown(
@@ -46,5 +67,7 @@ st.caption(
     "by [Quaternius](https://quaternius.com/), [CC0](https://creativecommons.org/publicdomain/zero/1.0/); "
     "[Pug](https://poly.pizza/m/xvcUwuKl4c) by Quaternius, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). · "
     "Hamster: [Hamster](https://poly.pizza/m/3YtzEQ5TVUP) by Poly by Google, "
-    "[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)."
+    "[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). · Street: car and street lights by Kay Lousberg (CC0); "
+    "bus, scooter and dog by Poly by Google, vendor cart by Alan Zimmerman, tree by Marc Solà "
+    "([CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)) — full list in static/pet/models/CREDITS.txt."
 )

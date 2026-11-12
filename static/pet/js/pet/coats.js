@@ -73,6 +73,7 @@ export function disposeMaterials(root) {
 export function coatSwatch(breed, coatId) {
   const coat = breed.coats?.[coatId];
   if (!coat) return '#ccc';
+  if (coat.swatch) return coat.swatch;
   if (coat.main) return `linear-gradient(135deg, ${coat.main} 0 55%, ${coat.light} 55% 100%)`;
   const base = breed.swatchBase || [0.78, 0.52, 0.33];     // the model's own colour (ruddy Somali by default)
   const l = 0.299 * base[0] + 0.587 * base[1] + 0.114 * base[2];

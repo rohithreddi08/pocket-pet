@@ -85,6 +85,26 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js"></script>
+<script type="module">
+  // Updates: the server sends no cache headers, so the browser can keep old copies of the game's files. When the
+  // build stamp (version.json, written by stamp_version.py) changes, re-download every file once, past the cache,
+  // before the game starts — so new models and breeds always show up.
+  const KEY = 'pocketpet.build';
+  try {
+    const res = await fetch('./version.json', {cache: 'no-store'});
+    if (res.ok) {
+      const {v, files} = await res.json();
+      let seen = null;
+      try { seen = localStorage.getItem(KEY); } catch { /* private mode */ }
+      if (seen !== v) {
+        const t = document.getElementById('loadingText');
+        if (t) t.textContent = 'Updating to the latest version…';
+        await Promise.all(files.map((f) => fetch(f, {cache: 'reload'}).catch(() => null)));
+        try { localStorage.setItem(KEY, v); } catch { /* private mode */ }
+      }
+    }
+  } catch { /* offline: start with what we have */ }
+  await import('./js/main.js');
+</script>
 </body>
 </html>

@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as T from './textures.js';
+import { OUR_WINDOWS } from './Outdoor.js';
 
 export const ROOM_W = 8;
 export const ROOM_D = 6;
@@ -79,8 +80,12 @@ function frame(texture, w = 0.8, h = 0.6, color = '#8a5a44') {
 
 function windowUnit(skyTex, w = 1.8, h = 1.4, frameColor = '#ffffff', curtain = '#e9a178') {
   const g = new THREE.Group();
-  const glass = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: skyTex, toneMapped: false }));
+  // clear glass: the street outside (Outdoor.js) shows through the opening in the wall
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(w, h), skyTex
+    ? new THREE.MeshBasicMaterial({ map: skyTex, toneMapped: false })
+    : new THREE.MeshStandardMaterial({ color: '#e8f3f8', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.1, depthWrite: false }));
   glass.position.z = 0.01;
+  glass.renderOrder = 2;
   g.add(glass);
   const fm = mat(frameColor, { rough: 0.5 });
   g.add(mesh(box(w + 0.16, 0.08, 0.12), fm, { y: h / 2 + 0.04 }));
@@ -158,7 +163,30 @@ export class House {
 
       const wm = mat('#ffffff', { rough: 0.95 });
       this.wallMats.push(wm);
-      const back = mesh(new THREE.PlaneGeometry(ROOM_W, WALL_H), wm, { x: cx, y: WALL_H / 2, z: -ROOM_D / 2, cast: false });
+      // the back wall, with real openings where the windows are (the street is drawn behind it)
+      const shape = new THREE.Shape();
+      shape.moveTo(-ROOM_W / 2, 0); shape.lineTo(ROOM_W / 2, 0); shape.lineTo(ROOM_W / 2, WALL_H); shape.lineTo(-ROOM_W / 2, WALL_H); shape.lineTo(-ROOM_W / 2, 0);
+      const reveal = mat('#f1ebe0', { rough: 0.9 });
+      for (const [wx, wy, ww, wh] of OUR_WINDOWS) {
+        if (wx < cx - ROOM_W / 2 || wx > cx + ROOM_W / 2) continue;
+        const lx = wx - cx;
+        const hole = new THREE.Path();
+        hole.moveTo(lx - ww / 2, wy - wh / 2); hole.lineTo(lx + ww / 2, wy - wh / 2); hole.lineTo(lx + ww / 2, wy + wh / 2); hole.lineTo(lx - ww / 2, wy + wh / 2); hole.lineTo(lx - ww / 2, wy - wh / 2);
+        shape.holes.push(hole);
+        // reveals: the wall's thickness around the opening, out to the outside face
+        const depth = 0.34; const zc = -ROOM_D / 2 - depth / 2;
+        this.group.add(mesh(box(ww, 0.02, depth), reveal, { x: wx, y: wy - wh / 2, z: zc, cast: false }));
+        this.group.add(mesh(box(ww, 0.02, depth), reveal, { x: wx, y: wy + wh / 2, z: zc, cast: false }));
+        this.group.add(mesh(box(0.02, wh, depth), reveal, { x: wx - ww / 2, y: wy, z: zc, cast: false }));
+        this.group.add(mesh(box(0.02, wh, depth), reveal, { x: wx + ww / 2, y: wy, z: zc, cast: false }));
+      }
+      const wallGeo = new THREE.ShapeGeometry(shape);
+      { // UVs across the whole wall, as the old plane had
+        const pos = wallGeo.attributes.position; const uv = new Float32Array(pos.count * 2);
+        for (let i = 0; i < pos.count; i += 1) { uv[i * 2] = (pos.getX(i) + ROOM_W / 2) / ROOM_W; uv[i * 2 + 1] = pos.getY(i) / WALL_H; }
+        wallGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      }
+      const back = mesh(wallGeo, wm, { x: cx, y: 0, z: -ROOM_D / 2, cast: false });
       this.group.add(back);
       // baseboard + crown trim
       this.group.add(mesh(box(ROOM_W, 0.16, 0.05), mat('#fbf7f0', { rough: 0.6 }), { x: cx, y: 0.08, z: -ROOM_D / 2 + 0.025, cast: false }));
@@ -228,8 +256,7 @@ export class House {
     g.add(mesh(new THREE.CircleGeometry(1.75, 48), mat('#ffffff', { map: T.rug(['#e9a178', '#f4d6a0', '#8fc1b5']), rough: 1 }), { y: 0.005, z: 0.4, rx: -Math.PI / 2, cast: false }));
     const a1 = frame(T.art('paw'), 0.6, 0.6); a1.position.set(-2.5, 2.25, -2.97); g.add(a1);
     const a2 = frame(T.art('hills'), 0.8, 0.55); a2.position.set(-1.35, 2.1, -2.97); g.add(a2);
-    const sky = T.windowSky(); this.skies.push(sky);
-    const win = windowUnit(sky.texture, 1.7, 1.35, '#ffffff', '#e9a178'); win.position.set(1.5, 2.0, -2.94); g.add(win);
+    const win = windowUnit(null, 2.8, 2.2, '#ffffff', '#e9a178'); win.position.set(1.5, 2.55, -2.94); g.add(win);
 
     // Cat tree (scratching post) — left
     const tree = new THREE.Group();
@@ -268,7 +295,7 @@ export class House {
       { room: 0, name: 'the cat tree', ground: new THREE.Vector3(cx - 2.0, 0, 0.1), top: new THREE.Vector3(cx - 3.1, 1.69, -0.3), nap: true },
       { room: 0, name: 'the sofa', ground: new THREE.Vector3(cx - 1.6, 0, -1.2), top: new THREE.Vector3(cx - 1.6, 0.72, -2.3), nap: true, dog: true },
     );
-    this.windows.push({ room: 0, spot: new THREE.Vector3(cx + 1.5, 0, -1.0), glass: new THREE.Vector3(cx + 1.5, 2.0, -2.9) });
+    this.windows.push({ room: 0, spot: new THREE.Vector3(cx + 1.5, 0, -1.0), glass: new THREE.Vector3(cx + 1.5, 2.55, -2.9) });
     this.catTree = tree;
 
     // Front door on the left wall (walks start here).
@@ -440,8 +467,7 @@ export class House {
       g.add(mesh(rbox(0.95, 0.75, 0.38, 0.03), cab, { x: -0.25 + (i - 1) * 1.0, y: 2.55, z: -2.8 }));
     }
     // Window above sink
-    const sky = T.windowSky(); this.skies.push(sky);
-    const win = windowUnit(sky.texture, 1.4, 1.0, '#ffffff', '#f2cc8f'); win.position.set(-2.4, 2.25, -2.94); g.add(win);
+    const win = windowUnit(null, 2.2, 1.45, '#ffffff', '#f2cc8f'); win.position.set(-2.4, 2.45, -2.94); g.add(win);
     // Fridge (interactive)
     const fridge = new THREE.Group();
     const fm = mat('#eaf4f1', { rough: 0.35, metal: 0.1 });
@@ -621,8 +647,7 @@ export class House {
     this._interactive(lamp, 'lamp', room.index);
 
     // Window, clock, bookshelf
-    const sky = T.windowSky(); this.skies.push(sky);
-    const win = windowUnit(sky.texture, 1.6, 1.3, '#ffffff', '#3d405b'); win.position.set(1.0, 2.05, -2.94); g.add(win);
+    const win = windowUnit(null, 2.6, 2.1, '#ffffff', '#3d405b'); win.position.set(1.0, 2.55, -2.94); g.add(win);
     this.clock = T.clockFace();
     const clock = new THREE.Group();
     clock.add(mesh(cyl(0.36, 0.36, 0.06, 32), mat('#e07a5f', { rough: 0.5 }), { rx: Math.PI / 2 }));
@@ -673,7 +698,7 @@ export class House {
     g.add(mouse);
 
     room.spots = { bed: new THREE.Vector3(cx - 1.6, 0, -1.7), window: new THREE.Vector3(cx + 1.0, 0, -1.2) };
-    this.windows.push({ room: 3, spot: new THREE.Vector3(cx + 1.0, 0, -1.2), glass: new THREE.Vector3(cx + 1.0, 2.05, -2.9) });
+    this.windows.push({ room: 3, spot: new THREE.Vector3(cx + 1.0, 0, -1.2), glass: new THREE.Vector3(cx + 1.0, 2.55, -2.9) });
     this.beds = [{ room: 3, spot: new THREE.Vector3(cx - 1.6, 0, -1.7), name: 'its bed' }];
   }
 
@@ -706,8 +731,19 @@ export class House {
 
   setLights(i, on) { this.rooms[i].lightsOn = on; }
 
-  /** Is it night outside right now? */
-  get isNight() { const h = new Date().getHours(); return h < 6 || h >= 20; }
+  /** Is it night outside right now? (real sunrise/sunset once world.js knows your place) */
+  get isNight() {
+    const now = new Date(); const h = now.getHours() + now.getMinutes() / 60;
+    const sun = this.sun || { rise: 6.5, set: 19 };
+    return h < sun.rise - 0.4 || h >= sun.set + 0.6;
+  }
+
+  /** Real-world sky: sun times and the current weather (null = a generic fair day). */
+  setSky(sun, weather) {
+    this.sun = sun;
+    this.weather = weather;
+    this._updateClock(true);
+  }
 
   _updateClock(force = false) {
     const now = new Date();
@@ -716,7 +752,7 @@ export class House {
     this._lastMinute = minute;
     this.clock.redraw(now);
     const hour = now.getHours() + now.getMinutes() / 60;
-    for (const s of this.skies) s.redraw(hour);
+    for (const s of this.skies) s.redraw(hour, this.sun, this.weather);
   }
 
   // ------------------------------------------------------------------ per frame

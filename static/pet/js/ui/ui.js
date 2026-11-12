@@ -17,6 +17,7 @@ import { openCook, fridgeList } from './kitchen.js';
 import { openWalk, openTrain } from './outdoor.js';
 import { guideFor } from './guide.js';
 import { openHealth } from './health.js';
+import { WORLD, geocode, fetchWeather, clearWeather, detectCountry, fetchHolidays } from '../world.js';
 
 const RING_C = 2 * Math.PI * 20;
 
@@ -484,8 +485,90 @@ export class UI {
       h('label', {}, 'Microphone sensitivity', sens),
       h('div', { class: 'stats' },
         `💗 Trust ${Math.round(s.bond)}/100 (${g.bondLabel()}) · 🍪 Fed ${st.fed} · 🍳 Cooked ${st.cooked || 0} · 🤚 Petted ${st.petted} · 🪮 Brushed ${st.brushed} · ${this.dog ? `🦮 Walks ${st.walks || 0}` : `🧹 Cleaned ${st.scooped} · ${this.ham ? '✋ Hand offers' : '😌 Blinks'} ${st.blinks}`} · 😴 Naps ${st.slept} · 🗣️ Talked ${st.talked} · 🛁 Baths ${st.washed} · 🎮 Games ${st.games} · ⏱️ Focus ${st.focusMin} min`),
-      h('p', { class: 'muted small' }, '3D models: “Somali Cat Animated ver 1.2” by DreamNoms (CC BY 4.0); “Cat” by J-Toastie (CC BY 3.0, via Poly Pizza); Husky, Shiba Inu and German Shepherd by Quaternius (CC0); “Characters Pug” by Quaternius (CC BY 3.0); “Hamster” by Poly by Google (CC BY 3.0). Progress is saved on this device.'),
+      this._worldSettings(),
+      h('p', { class: 'muted small' }, '3D models: “Somali Cat Animated ver 1.2” by DreamNoms (CC BY 4.0); “Cat” by J-Toastie (CC BY 3.0, via Poly Pizza); Husky, Shiba Inu and German Shepherd by Quaternius (CC0); “Characters Pug” by Quaternius (CC BY 3.0); “Hamster” by Poly by Google (CC BY 3.0). Street: car and street lights by Kay Lousberg (CC0); bus, scooter and street dog by Poly by Google, vendor cart by Alan Zimmerman, tree by Marc Solà (CC BY 3.0). Progress is saved on this device.'),
       reset));
+  }
+
+  // Real world: local weather + sunrise (Open-Meteo), festivals (caldays), data credits -------------
+  _worldSettings() {
+    const g = this.game;
+    const ws = () => ({ ...(g.s.settings.world || {}) });
+    const save = (patch) => g.setting('world', { ...ws(), ...patch });
+    const status = h('p', { class: 'small' });
+    const show = () => {
+      const w = WORLD.weather; const cur = ws();
+      status.textContent = !cur.weather ? 'Off — the game uses a generic day (sunrise 6:30, sunset 19:00).'
+        : cur.lat == null ? 'On — pick your city or use your location.'
+          : w ? `${w.icon} ${w.label}, ${Math.round(w.temp)} °C (feels ${Math.round(w.feels)} °C) in ${w.place || cur.place}. Sunrise ${fmtH(w.rise)}, sunset ${fmtH(w.set)}.`
+            : `Loading the weather for ${cur.place}…`;
+    };
+    const fmtH = (x) => (x == null ? '—' : `${Math.floor(x)}:${String(Math.round((x % 1) * 60)).padStart(2, '0')}`);
+    const on = h('input', { type: 'checkbox' }); on.checked = !!ws().weather;
+    const city = h('input', { type: 'text', placeholder: 'City, e.g. Hyderabad', value: ws().place || '' });
+    const use = async (loc) => {
+      save({ weather: true, ...loc });
+      on.checked = true;
+      status.textContent = `Loading the weather for ${loc.place}…`;
+      try { await fetchWeather(loc, true); show(); } catch { status.textContent = 'Couldn’t reach the weather service — check your connection.'; }
+    };
+    on.onchange = () => {
+      save({ weather: on.checked });
+      if (!on.checked) clearWeather();
+      else if (ws().lat != null) use({ lat: ws().lat, lon: ws().lon, place: ws().place });
+      show();
+    };
+    const find = h('button', { class: 'chip small', onclick: async () => {
+      const q = city.value.trim(); if (!q) return;
+      status.textContent = 'Searching…';
+      try {
+        const loc = await geocode(q);
+        if (!loc) { status.textContent = `No place called “${q}” found.`; return; }
+        city.value = loc.place;
+        await use({ lat: loc.lat, lon: loc.lon, place: loc.place });
+      } catch { status.textContent = 'Couldn’t reach the place search — check your connection.'; }
+    } }, 'Find');
+    const here = h('button', { class: 'chip small', onclick: () => {
+      if (!navigator.geolocation) { status.textContent = 'Location isn’t available here — type your city instead.'; return; }
+      status.textContent = 'Asking for your location…';
+      navigator.geolocation.getCurrentPosition(
+        (p) => use({ lat: +p.coords.latitude.toFixed(2), lon: +p.coords.longitude.toFixed(2), place: 'your location' }),
+        () => { status.textContent = 'Location was blocked (or the game is in a frame) — type your city instead.'; },
+        { timeout: 10000, maximumAge: 3600000 });
+    } }, '📍 Use my location');
+    const cc = h('input', { type: 'text', maxlength: 2, style: 'width:4em;text-transform:uppercase', value: (ws().country || WORLD.country || '').toUpperCase() });
+    cc.onchange = () => {
+      const v = cc.value.trim().toLowerCase();
+      save({ country: v || null });
+      WORLD.country = v || detectCountry();
+      fetchHolidays(WORLD.country).catch(() => {});
+      this.toast(`Festivals for ${(WORLD.country || '?').toUpperCase()} — fireworks nights will scare your pets, just like real ones.`);
+    };
+    show();
+    return h('div', { class: 'world-set' },
+      h('h4', {}, '🌍 Real world'),
+      h('label', { class: 'inline' }, on, ' Use my local weather and sunrise / sunset'),
+      h('div', { class: 'row' }, city, find, here),
+      status,
+      h('p', { class: 'muted small' }, 'Rain, heat and storms change walks and scare pets; cats are busiest at your real dawn and dusk. Only the rounded city position is stored, on this device, and sent to the weather service.'),
+      h('label', { class: 'inline' }, 'Country for festivals (fireworks nights): ', cc),
+      h('p', { class: 'muted small' }, 'Data: weather by ', h('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener' }, 'Open-Meteo'), ' (CC BY 4.0) · public holiday data powered by ',
+        h('a', { href: 'https://caldays.com', target: '_blank', rel: 'noopener' }, 'caldays'), ' (CC BY 4.0) · dog breed health from ',
+        h('a', { href: 'https://breedhealthscore.com', target: '_blank', rel: 'noopener' }, 'Breed Health Score'), ' (CC BY 4.0; lifespans: McMillan et al. 2024) · ingredient energy from ',
+        h('a', { href: 'https://fdc.nal.usda.gov', target: '_blank', rel: 'noopener' }, 'USDA FoodData Central'), ' (public domain).'));
+  }
+
+  /** The weather badge at the top of the screen. */
+  weather(w) {
+    let el = document.getElementById('weatherChip');
+    if (!el) {
+      el = h('button', { id: 'weatherChip', onclick: () => { this.sound.click(); this.openSettings(); } });
+      document.body.append(el);
+    }
+    el.hidden = !w;
+    if (!w) return;
+    el.textContent = `${w.icon} ${Math.round(w.temp)}°`;
+    el.title = `${w.label}, ${Math.round(w.temp)} °C (feels ${Math.round(w.feels)} °C) — ${w.place || 'your place'}`;
   }
 
   // Care guide --------------------------------------------------------------------

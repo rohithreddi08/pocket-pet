@@ -12,9 +12,9 @@
 // more; seniors slow down) and breed (long coats need more brushing).
 // Everything keeps going while the app is closed, capped at 12 h.
 // ============================================================================
-import { BREEDS, SPECIES, PERSONALITIES, breedOf, lifeStage, newPetFrom, dailyKcal, mealsPerDay } from './species.js';
+import { BREEDS, SPECIES, PERSONALITIES, breedOf, lifeStage, newPetFrom, dailyKcal, mealsPerDay, ageMonths } from './species.js';
 import {
-  defaultHealth, normalizeHealth, tickHealth, vitality, worst, healthLabel, symptomsOf, CONDITIONS, VET,
+  defaultHealth, normalizeHealth, tickHealth, treatPrice, verdict, CRITICAL, vitality, worst, healthLabel, symptomsOf, CONDITIONS, VET,
   diagnose, treat, giveDose, dosesDue, prevention,
 } from './health.js';
 import {DEV, DEV_COINS} from './dev.js';
@@ -131,7 +131,7 @@ export function activityAt(hour, species = 'cat') {
 
 // Keys that belong to you (the profile); everything else belongs to a pet.
 const SHARED = new Set(['v', 'pets', 'activeId', 'createdAt', 'coins', 'devSavedCoins', 'xp', 'level', 'inventory', 'pantry', 'meals',
-  'cooking', 'hats', 'themes', 'theme', 'room', 'daily', 'best', 'settings', 'adopted', 'firstAdoptFree']);
+  'cooking', 'hats', 'themes', 'theme', 'room', 'daily', 'best', 'settings', 'adopted', 'firstAdoptFree', 'memorial']);
 
 function defaultPet(over = {}) {
   return {
@@ -179,6 +179,7 @@ function defaultProfile() {
     daily: { last: null, streak: 0 },
     best: { memory: 0, catch: 0 },
     adopted: [],                       // store listing ids already adopted
+    memorial: [],                      // pets who have passed away
     firstAdoptFree: true,
     settings: { sound: true, voicePitch: 1.6, micSensitivity: 0.5, parrot: false },
   };
@@ -241,6 +242,8 @@ export class Game extends Emitter {
     this._bind();
     this.offlineHours = this._catchUp(this.pet);
     for (const other of this.p.pets) if (other !== this.pet) this._catchUp(other);
+    this._lost = this.p.pets.filter((x) => x !== this.pet && x.health?.dead);
+    for (const x of this._lost) this._bury(x);
     this._saveTimer = 0;
     this._othersTimer = 0;
   }
@@ -355,6 +358,7 @@ export class Game extends Emitter {
     if (id === this.pet.id) return false;
     const next = this.p.pets.find((x) => x.id === id);
     if (!next) return false;
+    if (this.dead) this._bury(this.pet);        // leaving a pet who has passed away: into the memorial
     this.pet.lastTick = Date.now();
     this._catchUp(next);
     next.catRoom = this.p.room;          // your pet comes to greet you
@@ -377,8 +381,8 @@ export class Game extends Emitter {
   /** While you were away (or looking after another pet) it lived its life. */
   _catchUp(pet) {
     const hours = Math.min(MAX_OFFLINE_HOURS, Math.max(0, (Date.now() - (pet.lastTick || Date.now())) / 3.6e6));
+    if (hours < 0.02) return hours;   // too soon — keep counting from the old lastTick
     pet.lastTick = Date.now();
-    if (hours < 0.02) return hours;
     const before = { needs: { ...pet.needs }, litter: pet.litter, bladder: pet.bladder };
     const r = this._rates(pet);
     const n = pet.needs; const b = pet.bowl;
@@ -412,7 +416,9 @@ export class Game extends Emitter {
       for (const key of Object.keys(after.needs)) pet.needs[key] = before.needs[key] + (after.needs[key] - before.needs[key]) * k;
       pet.litter = before.litter + (after.litter - before.litter) * k;
       pet.bladder = before.bladder + (after.bladder - before.bladder) * k;
-      sick.push(...tickHealth(pet, breedOf(pet), hours / STEPS, { stage: lifeStage(pet), offline: true, now: Date.now() - (1 - k) * hours * 3.6e6 }));
+      if (pet.health.dead) break;
+      const at = Date.now() - (1 - k) * hours * 3.6e6;
+      sick.push(...tickHealth(pet, breedOf(pet), hours / STEPS, { stage: lifeStage(pet, at), offline: true, now: at, age: ageMonths(pet, at), noDeath: DEV.noDeath }));
     }
     Object.assign(pet.needs, after.needs); pet.litter = after.litter; pet.bladder = after.bladder;
     if (sick.length) (this._offlineSick ||= []).push({ pet, ids: sick });
@@ -436,6 +442,10 @@ export class Game extends Emitter {
 
   /** Call every frame with real seconds. */
   tick(dt, { focus = false, asleep = false, out = false } = {}) {
+    if (this.dead) {
+      if (!this._deathShown) { this._deathShown = this.pet.id; this.emit('death', this.pet); }
+      return;
+    }
     const h = (dt / 3600) * (focus ? 0.5 : 1);
     const r = this._rates(this.pet);
     const n = this.s.needs;
@@ -451,7 +461,7 @@ export class Game extends Emitter {
     if (this._healthAcc > 5) {
       const n = this.noise;
       const scared = !!(n?.active && !this.pet.out && Date.now() - (n.comfortedAt || 0) > 5 * 60000);
-      const ids = tickHealth(this.pet, this.breed, this._healthAcc / 3600, { stage: this.stage, scared });
+      const ids = tickHealth(this.pet, this.breed, this._healthAcc / 3600, { stage: this.stage, scared, age: ageMonths(this.pet), noDeath: DEV.noDeath });
       this._healthAcc = 0;
       if (ids.length) this.emit('sick', ids);
       this.emit('health');
@@ -463,8 +473,41 @@ export class Game extends Emitter {
     this._othersTimer += dt;
     if (this._othersTimer > 60) {
       this._othersTimer = 0;
-      for (const other of this.p.pets) if (other !== this.pet) this._catchUp(other);
+      for (const other of [...this.p.pets]) {
+        if (other === this.pet) continue;
+        this._catchUp(other);
+        if (other.health?.dead) { this._bury(other); this.emit('lost', other); }
+      }
     }
+  }
+
+  // ---------------------------------------------------------------- the end of a life
+  get dead() { return !!this.pet.health?.dead; }
+  /** Move a pet who has passed away into the memorial. */
+  _bury(pet) {
+    if (!this.p.memorial) this.p.memorial = [];
+    const d = pet.health.dead || {};
+    this.p.memorial.push({
+      id: pet.id, name: pet.name, species: pet.species, breed: pet.breed, coat: pet.coat, sex: pet.sex,
+      age: d.age ?? ageMonths(pet), cause: d.cause || 'ageing', at: d.at || Date.now(), adoptedAt: pet.adoptedAt,
+    });
+    this.p.pets = this.p.pets.filter((x) => x !== pet);
+    this.save();
+    this.emit('change');
+  }
+  /** After the active pet passes away: go on with another pet, if there is one. Returns the new pet or null. */
+  moveOn() {
+    const gone = this.pet;
+    const next = this.p.pets.find((x) => x !== gone && !x.health?.dead);
+    if (!next) return null;
+    this._catchUp(next);
+    next.catRoom = this.p.room;
+    this.p.activeId = next.id;
+    this._bury(gone);
+    this._bind();
+    this.save();
+    this.emit('pet'); this.emit('change');
+    return next;
   }
 
   // ---------------------------------------------------------------- derived
@@ -484,6 +527,7 @@ export class Game extends Emitter {
     const ham = pet.species === 'hamster';
     const face = dog ? { happy: '🐶', ok: '🐕', sad: '🥺', grumpy: '😤' }
       : ham ? { happy: '🐹', ok: '🐹', sad: '😟', grumpy: '😤' } : { happy: '😸', ok: '😺', sad: '😿', grumpy: '😾' };
+    if (pet.health?.dead) return { id: 'gone', emoji: '🌈', label: 'Passed away', low: [] };
     if (pet.out) return { id: 'out', emoji: '🦮', label: 'Out for a walk', low: [] };
     const hs = pet.health?.score ?? 100;
     if (hs < 65) return { id: 'sick', emoji: hs < 25 ? '🚑' : '🤒', label: healthLabel(pet.health), low: ['health', ...low] };
@@ -738,8 +782,7 @@ export class Game extends Emitter {
     return { ok: true, ids };
   }
   vetTreat(id) {
-    const def = CONDITIONS[id];
-    const price = def.treat.price || 0;
+    const price = treatPrice(this.pet, id);
     if (price && this.p.coins < price) return { ok: false, why: `That treatment costs 🪙 ${price}.` };
     const r = treat(this.pet, id);
     if (r.ok && price) this._pay(price);
@@ -767,4 +810,4 @@ export class Game extends Emitter {
   setting(key, value) { this.p.settings[key] = value; this.save(); this.emit('settings'); }
 }
 
-export { BREEDS, SPECIES, CONDITIONS, VET, symptomsOf, worst, healthLabel, prevention, dosesDue, vitality };
+export { BREEDS, SPECIES, CONDITIONS, VET, symptomsOf, worst, healthLabel, prevention, dosesDue, vitality, treatPrice, verdict, CRITICAL };

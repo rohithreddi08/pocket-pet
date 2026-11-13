@@ -5,9 +5,11 @@
 // vet bills never run out. Your real balance is put aside when this turns on
 // and given back when it turns off.
 // unlimitedPets: no limit on how many pets your home holds (normally 4).
+// noDeath: pets still age and get ill, but never pass away (for testing).
 // ============================================================================
 export const DEV = {
   unlimitedCoins: true,
   unlimitedPets: true,
+  noDeath: false,
 };
 export const DEV_COINS = 999999;

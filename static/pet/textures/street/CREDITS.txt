@@ -1,0 +1,9 @@
+Street textures (js/world/Outdoor.js) — all from Poly Haven, CC0 1.0 (public domain)
+https://polyhaven.com/license
+
+asphalt_03_*                 "Asphalt 03"                 https://polyhaven.com/a/asphalt_03
+checkered_pavement_tiles_*   "Checkered Pavement Tiles"   https://polyhaven.com/a/checkered_pavement_tiles
+beige_wall_001_*             "Beige Wall 001"             https://polyhaven.com/a/beige_wall_001
+concrete_*                   "Concrete"                   https://polyhaven.com/a/concrete
+
+1K JPG maps: _diff (colour), _nor (OpenGL normal), _rough (roughness).

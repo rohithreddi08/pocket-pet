@@ -24,6 +24,8 @@
 // Sources: see the care guides (ASPCA, AKC, Cornell, RSPCA, Blue Cross, Merck).
 // ============================================================================
 
+import { CHRONIC, tickAging, frailty, CONDITIONS_REF } from './aging.js';
+
 const H = 3.6e6;            // ms per hour
 const DAY = 24 * H;
 const clamp = (v, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -121,13 +123,13 @@ export const CONDITIONS = {
     advice: 'Use a vet-recommended flea and worm treatment regularly.',
   },
   catflu: {
-    species: ['cat'], name: 'Cat flu (upper respiratory infection)', icon: '🤧', weight: 40, worsen: 0.01, heal: 0.02, random: 0.0006,
+    species: ['cat'], name: 'Cat flu (upper respiratory infection)', icon: '🤧', weight: 40, worsen: 0.01, heal: 0.02, random: 0.00006,
     symptoms: ['sneezing', 'runny eyes and nose', 'off food (can\'t smell it)'],
     cause: 'Viruses that spread between cats; vaccination protects.', treat: { kind: 'course', what: 'Supportive care, eye drops, antibiotics if needed', price: 45, doses: 6, every: 24 },
     advice: 'Keep your cat\'s vaccinations up to date.',
   },
   kennelcough: {
-    species: ['dog'], name: 'Kennel cough', icon: '🤧', weight: 30, worsen: 0.008, heal: 0.025, random: 0.0005,
+    species: ['dog'], name: 'Kennel cough', icon: '🤧', weight: 30, worsen: 0.008, heal: 0.025, random: 0.00005,
     symptoms: ['honking cough', 'gagging', 'tired'],
     cause: 'Infection caught from other dogs; vaccination reduces it.', treat: { kind: 'course', what: 'Rest + cough medicine', price: 40, doses: 5, every: 24 },
     advice: 'Keep vaccinations up to date.',
@@ -154,12 +156,17 @@ export const CONDITIONS = {
     advice: 'Before fireworks nights: keep pets indoors, close curtains, play calm background sound, and talk to your vet if the fear is severe.',
   },
   resp: {
-    species: ['hamster'], name: 'Respiratory infection', icon: '🤧', weight: 50, worsen: 0.012, heal: 0.02, random: 0.0002,
+    species: ['hamster'], name: 'Respiratory infection', icon: '🤧', weight: 50, worsen: 0.012, heal: 0.02, random: 0.00002,
     symptoms: ['sneezing', 'clicking breathing', 'wet nose'],
     cause: 'Draughts, damp or dusty bedding, or a cold room.', treat: { kind: 'course', what: 'Antibiotics from an exotics vet', price: 45, doses: 5, every: 24 },
     advice: 'Use dust-free paper bedding and keep the tank out of draughts.',
   },
 };
+
+// age-related diseases live in aging.js; they're conditions like any other
+Object.assign(CONDITIONS, CHRONIC);
+CONDITIONS_REF.table = CONDITIONS;
+export { frailty };
 
 export function defaultHealth(now = Date.now()) {
   return {
@@ -274,8 +281,11 @@ export function tickHealth(pet, breed, hours, ctx) {
   const frail = (ctx.stage === 'baby' || ctx.stage === 'senior' ? 1.8 : 1) * (h.score < 50 ? 2 : 1);
   for (const [id, def] of Object.entries(CONDITIONS)) {
     if (!def.random || (def.species && !def.species.includes(sp))) continue;
-    if (Math.random() < hours * def.random * (vaccinated ? 0.15 : 1) * frail) started.push(add(pet, id));
+    if (Math.random() < hours * def.random * (vaccinated ? 0.06 : 1) * frail) started.push(add(pet, id));
   }
+
+  // --- growing old: age-related diseases, the hidden lifespan, the end
+  const death = tickAging(pet, breed, hours, { age: ctx.age, noDeath: ctx.noDeath }, add);
 
   // --- body condition (BCS 1–9): over/under-feeding moves it slowly (days)
   if (n.food > 92 && (pet.overfed || 0) > 0) h.bcs = Math.min(9, h.bcs + hours * 0.02 * pet.overfed);
@@ -294,7 +304,15 @@ export function tickHealth(pet, breed, hours, ctx) {
   };
   for (const [id, c] of Object.entries(h.conds)) {
     const def = CONDITIONS[id];
-    if (def.bcs) continue;
+    if (def.bcs || def.frailty) continue;
+    if (CHRONIC[id]) {
+      // chronic: never cured; a managed disease (daily medicine, given on time, prescription current) slows right down
+      const course = c.course;
+      const managed = def.treat.kind === 'manage' && course && course.given < course.doses && Date.now() <= course.nextAt + 6 * H;
+      c.managed = !!managed;
+      c.sev = clamp(c.sev + def.worsen * hours * (managed ? def.managedK : 1), 0, 1);
+      continue;
+    }
     const course = c.course;
     const onMeds = course && course.given > 0;
     const healing = c.treated || (def.selfHeal && causeGone[id]) || (def.treat.kind === 'care' && causeGone[id]);
@@ -318,6 +336,7 @@ export function tickHealth(pet, breed, hours, ctx) {
   if (ctx.stage === 'senior') target -= 4;
   target = clamp(target);
   h.score = clamp(h.score + (target - h.score) * Math.min(1, hours * 0.6));
+  if (death && !h.dead) h.dead = { at: now, cause: death.cause, age: ctx.age };
   return started.filter(Boolean);
 }
 
@@ -332,7 +351,42 @@ function remove(pet, id, recovered = false) {
   const h = pet.health;
   if (!h.conds[id]) return;
   delete h.conds[id];
-  if (recovered) h.log.push({ t: Date.now(), text: `Recovered from ${CONDITIONS[id].name.toLowerCase()}` });
+  if (recovered) {
+    h.log.push({ t: Date.now(), text: `Recovered from ${CONDITIONS[id].name.toLowerCase()}` });
+    h.cured = [...(h.cured || []), { id, at: Date.now() }].slice(-10);
+  }
+}
+
+// ---------------------------------------------------------------- the medical report
+/** Above this severity a curable illness is critical: it has to be brought under control before it can be cured. */
+export const CRITICAL = 0.7;
+const EMERGENCY_SEV = 0.5;
+
+/**
+ * What the vet would say about a condition:
+ *  'unknown'  not diagnosed yet
+ *  'cure'     curable, medicine/procedure cures it
+ *  'critical' curable but too far gone: emergency care controls it first, then the course cures it
+ *  'control'  can't be cured; daily medicine keeps it under control
+ *  'care'     no medicine — it gets better with the right care at home
+ *  'curing' / 'controlled'  treatment under way
+ */
+export function verdict(id, c) {
+  const def = CONDITIONS[id];
+  if (!c.dx) return 'unknown';
+  const k = def.treat.kind;
+  if (k === 'care') return 'care';
+  if (k === 'manage') return c.managed || (c.course && c.course.given < c.course.doses && c.treated) ? 'controlled' : 'control';
+  if (CHRONIC[id]) return 'control';          // e.g. dental disease: a clean resets it, but it comes back
+  if (c.treated) return 'curing';
+  return c.sev >= CRITICAL ? 'critical' : 'cure';
+}
+
+/** What treating it costs right now (emergency care costs more). */
+export function treatPrice(pet, id) {
+  const c = pet.health.conds[id]; const def = CONDITIONS[id];
+  const base = def.treat.price || 0;
+  return c && verdict(id, c) === 'critical' ? Math.round(base * 1.5) : base;
 }
 
 // ---------------------------------------------------------------- the vet
@@ -349,15 +403,34 @@ export function treat(pet, id) {
   const h = pet.health; const c = h.conds[id]; const def = CONDITIONS[id];
   if (!c || !c.dx) return { ok: false, why: 'The vet needs to examine first' };
   if (def.treat.kind === 'care') return { ok: false, why: def.treat.what };
+  if (def.treat.kind === 'procedure' && CHRONIC[id]) {
+    // e.g. a dental clean: the teeth start over, but it will build up again with time
+    c.sev = 0.04; c.treated = false; c.dx = true;
+    h.log.push({ t: Date.now(), text: `${def.treat.what} at the vet` });
+    return { ok: true, text: `${def.treat.what} — done. Keep up home care to slow it coming back.` };
+  }
+  if (def.treat.kind === 'manage') {
+    c.course = { doses: def.treat.doses, given: 1, every: def.treat.every, nextAt: Date.now() + def.treat.every * H };
+    c.treated = true;
+    h.log.push({ t: Date.now(), text: `Prescribed: ${def.treat.what.toLowerCase()}` });
+    return { ok: true, text: `This can't be cured, but it can be managed. First dose given — then one every day at home. The prescription lasts ${def.treat.doses} days; come back to refill it.` };
+  }
+  // Too critical to cure straight away: stabilise first (fluids, oxygen, pain relief), then the cure can work.
+  const emergency = c.sev >= CRITICAL;
+  if (emergency) {
+    c.sev = Math.min(c.sev, EMERGENCY_SEV);
+    h.log.push({ t: Date.now(), text: `Emergency care for ${def.name.toLowerCase()} — now under control` });
+  }
+  const pre = emergency ? `🚑 Emergency care brought it under control. ` : '';
   if (def.treat.kind === 'procedure') {
     c.treated = true; c.sev = Math.min(c.sev, 0.3);
     h.log.push({ t: Date.now(), text: `${def.treat.what} at the vet` });
-    return { ok: true, text: `${def.treat.what} — done. ${pet.name} will feel better over the next hours.` };
+    return { ok: true, text: `${pre}${def.treat.what} — done. ${pet.name} will feel better over the next hours.` };
   }
   c.course = { doses: def.treat.doses, given: 1, every: def.treat.every, nextAt: Date.now() + def.treat.every * H };
   c.treated = true;
   h.log.push({ t: Date.now(), text: `Started ${def.treat.what.toLowerCase()} (${def.treat.doses} doses, every ${def.treat.every} h)` });
-  return { ok: true, text: `First dose given at the clinic. Give the rest at home: ${def.treat.doses - 1} more, one every ${def.treat.every} hours.` };
+  return { ok: true, text: `${pre}First dose given at the clinic. Give the rest at home: ${def.treat.doses - 1} more, one every ${def.treat.every} hours — every dose, so it's fully cured.` };
 }
 
 /** Medicine due now (at home). */

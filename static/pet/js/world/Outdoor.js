@@ -32,6 +32,61 @@ export const STREET = { facade: -3.32, pathNear: -3.32, kerbNear: -9.2, laneA: -
 // where the walks go: out of the gate, along the near footpath
 export const WALK = { gate: new V3(-7.5, 0, -6.3), z: -6.3, x0: -7.5, x1: 34 };
 
+// ------------------------------------------------------------ photo textures (CC0, Poly Haven — see textures/street/CREDITS.txt)
+const TEX = './textures/street/';
+const texLoader = new THREE.TextureLoader();
+/** A scanned PBR material set (colour, normal, roughness) tiled `repeat` times. */
+function pbr(id, repeat) {
+  const ld = (suffix, srgb) => {
+    const t = texLoader.load(`${TEX}${id}_${suffix}.jpg`);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.anisotropy = 8;
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  return { map: ld('diff', true), normalMap: ld('nor'), roughnessMap: ld('rough') };
+}
+/** Surface relief only (for painted walls whose colour comes from a canvas). */
+function relief(id, repeat) {
+  const t = texLoader.load(`${TEX}${id}_nor.jpg`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat);
+  return t;
+}
+const loadImg = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+// real weathered concrete, blended into the painted walls so they look lived-in
+const GRIME = loadImg(`${TEX}concrete_diff.jpg`);
+function weather(tex, tile = 256, alpha = 0.5) {
+  GRIME.then((img) => {
+    if (!img) return;
+    const c = tex.image; const g = c.getContext('2d');
+    g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = alpha;
+    for (let y = 0; y < c.height; y += tile) for (let x = 0; x < c.width; x += tile) g.drawImage(img, x, y, tile, tile);
+    // darker grime collects at the bottom of walls
+    g.globalCompositeOperation = 'multiply'; g.globalAlpha = 1;
+    const gr = g.createLinearGradient(0, c.height * 0.8, 0, c.height); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(150,140,125,1)');
+    g.fillStyle = gr; g.fillRect(0, c.height * 0.8, c.width, c.height * 0.2);
+    g.restore();
+    tex.needsUpdate = true;
+  });
+}
+/** Painted plaster in a colour, with monsoon stains (for building sides and our walls). */
+const plasterCache = new Map();
+function plasterTex(colour) {
+  if (plasterCache.has(colour)) return plasterCache.get(colour);
+  const t = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = colour; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 26; i += 1) {
+      const x = rnd() * w; const len = 60 + rnd() * 200; const y = rnd() * h * 0.5;
+      const gr = g.createLinearGradient(0, y, 0, y + len); gr.addColorStop(0, 'rgba(70,62,50,0.2)'); gr.addColorStop(1, 'rgba(70,62,50,0)');
+      g.fillStyle = gr; g.fillRect(x, y, 5 + rnd() * 20, len);
+    }
+    grime(g, w, h, 120, 0.05);
+  }, { repeat: [1, 1] });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  weather(t, 256, 0.6);
+  plasterCache.set(colour, t);
+  return t;
+}
+
 // ------------------------------------------------------------ canvas textures
 function canvasTex(w, h, draw, { repeat = null, srgb = true } = {}) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -49,23 +104,6 @@ const grime = (g, w, h, n, a = 0.06) => {
     g.fillRect(rnd() * w, rnd() * h, 2 + rnd() * 30, 2 + rnd() * 30);
   }
 };
-function asphaltTex() {
-  return canvasTex(512, 512, (g, w, h) => {
-    g.fillStyle = '#4a4a4c'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 9000; i += 1) { const v = 50 + rnd() * 50; g.fillStyle = `rgb(${v},${v},${v + 2})`; g.fillRect(rnd() * w, rnd() * h, 1.6, 1.6); }
-    for (let i = 0; i < 14; i += 1) { g.fillStyle = `rgba(${rnd() < 0.5 ? '30,30,32' : '95,93,90'},0.35)`; g.beginPath(); g.ellipse(rnd() * w, rnd() * h, 20 + rnd() * 60, 10 + rnd() * 30, rnd() * 3, 0, Math.PI * 2); g.fill(); }
-  }, { repeat: [20, 3] });
-}
-function pavingTex() {
-  return canvasTex(512, 512, (g, w, h) => {
-    g.fillStyle = '#9b958a'; g.fillRect(0, 0, w, h);
-    const s = 64;
-    for (let y = 0; y < h; y += s) for (let x = 0; x < w; x += s) {
-      const v = 140 + rnd() * 30; g.fillStyle = `rgb(${v},${v - 6},${v - 14})`; g.fillRect(x + 2, y + 2, s - 4, s - 4);
-    }
-    grime(g, w, h, 160, 0.12);
-  }, { repeat: [40, 2] });
-}
 const SHOPS = [['MEDICAL', '#1f7a3f'], ['KIRANA STORE', '#c0392b'], ['TEA STALL', '#8e5a2b'], ['MOBILE REPAIR', '#1d4e89'], ['SWEETS', '#d35400'], ['TAILOR', '#6c3483'], ['BAKERY', '#b9770e'], ['XEROX · STD', '#2e4053']];
 /** A building face: storeys of windows with grills, plaster stains, a ground floor of shops. Also its night window map. */
 function facadeTex(color, storeys, bays, shop) {
@@ -112,6 +150,7 @@ function facadeTex(color, storeys, bays, shop) {
     }
   });
   map.flipY = true;
+  weather(map, 384, 0.45);
   const emissive = canvasTex(W, H, (g) => {
     g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
     for (const [x, y, on, shopLit] of lit) {
@@ -191,8 +230,9 @@ export class Outdoor {
     this.pmrem = new THREE.PMREMGenerator(renderer);
     this.sun = new THREE.DirectionalLight('#fff2dc', 3);
     this.sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(this.sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 400 });
-    this.sun.shadow.bias = -0.0005;
+    this._shadowBox(42);
+    this.sun.shadow.bias = -0.0004; this.sun.shadow.normalBias = 0.04;
+    this.sun.shadow.radius = 3;
     this.scene.add(this.sun, this.sun.target);
     this.moon = new THREE.DirectionalLight('#9fb4e8', 0);
     this.scene.add(this.moon);
@@ -229,33 +269,72 @@ export class Outdoor {
     const sc = this.scene;
     const len = S.x1 - S.x0; const cx = (S.x0 + S.x1) / 2;
     // footpaths, kerbs, road
-    this.roadMat = std('#ffffff', { map: asphaltTex(), roughness: 0.9 });
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(len, S.kerbNear - S.kerbFar), this.roadMat);
+    const roadW = S.kerbNear - S.kerbFar;
+    // scanned worn asphalt (one tile ≈ 2 m)
+    this.roadMat = std('#ffffff', { ...pbr('asphalt_03', [len / 7, roadW / 7]), roughness: 1 });
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(len, roadW), this.roadMat);
     road.rotation.x = -Math.PI / 2; road.position.set(cx, 0, (S.kerbNear + S.kerbFar) / 2); road.receiveShadow = true; sc.add(road);
-    const paving = std('#ffffff', { map: pavingTex(), roughness: 0.95 });
+    // patched potholes, dust along the kerbs, a manhole cover
+    const patch = std('#5a5854', { ...pbr('asphalt_03', [1, 1]), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
+    const patches = [];
+    for (let i = 0; i < 26; i += 1) {
+      const pw = 1.5 + rnd() * 5; const pd = 1 + rnd() * 3;
+      patches.push(new THREE.PlaneGeometry(pw, pd).rotateX(-Math.PI / 2).rotateY((rnd() - 0.5) * 0.3).translate(S.x0 + rnd() * len, 0.005, S.kerbFar + 1 + rnd() * (roadW - 2)));
+    }
+    const pm = new THREE.Mesh(mergeGeometries(patches), patch); pm.receiveShadow = true; sc.add(pm);
+    // dust and sand blown against the kerbs
+    const dustMap = canvasTex(64, 64, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(150,130,105,0.75)'); gr.addColorStop(1, 'rgba(150,130,105,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+    const dustLit = std('#ffffff', { map: dustMap, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+    for (const [z, flip] of [[S.kerbNear - 0.9, 0], [S.kerbFar + 0.9, 1]]) {
+      const d = new THREE.Mesh(new THREE.PlaneGeometry(len, 1.8), dustLit);
+      d.rotation.x = -Math.PI / 2; if (flip) d.rotation.z = Math.PI;
+      d.position.set(cx, 0.008, z); d.receiveShadow = true; sc.add(d);
+    }
+    const manhole = new THREE.Mesh(new THREE.CircleGeometry(1.4, 28), std('#3b3a37', { metalness: 0.6, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -4 }));
+    manhole.rotation.x = -Math.PI / 2; manhole.position.set(12, 0.01, S.laneA + 1); manhole.receiveShadow = true; sc.add(manhole);
+    // footpaths: chequered cement tiles (≈ 30 cm), like Indian city pavements
+    const paving = std('#ffffff', { ...pbr('checkered_pavement_tiles', [len / 10, 0.6]), roughness: 1 });
+    // kerb stones, painted black and yellow like Indian kerbs, on scanned concrete
+    const kerbTex = pbr('concrete', [0.6, 0.15]);
+    const kerbs = { y: [], k: [] };
     for (const [z0, z1] of [[S.pathNear, S.kerbNear], [S.kerbFar, S.pathFar]]) {
       const p = new THREE.Mesh(new THREE.BoxGeometry(len, 0.5, Math.abs(z1 - z0)), paving);
       p.position.set(cx, 0.25, (z0 + z1) / 2); p.receiveShadow = true; sc.add(p);
-      // kerb stones, painted black and yellow like Indian kerbs
       const kz = z0 === S.pathNear ? S.kerbNear + 0.25 : S.kerbFar - 0.25;
-      for (let x = S.x0; x < S.x1; x += 3) sc.add(box(3, 0.6, 0.5, std(Math.floor(x / 3) % 2 ? '#202020' : '#e8c22a'), x + 1.5, 0.3, kz));
+      for (let x = S.x0; x < S.x1; x += 3) (Math.floor(x / 3) % 2 ? kerbs.k : kerbs.y).push(new THREE.BoxGeometry(2.96, 0.62, 0.5).translate(x + 1.5, 0.31, kz));
     }
-    // lane marking down the middle
-    const dash = std('#e8e2d0', { roughness: 0.7 });
-    for (let x = S.x0; x < S.x1; x += 8) { const d = box(4, 0.02, 0.35, dash, x, 0.012, S.centre); d.receiveShadow = true; sc.add(d); }
+    for (const [list, col] of [[kerbs.y, '#ffd84a'], [kerbs.k, '#3c3c3c']]) {
+      const m = new THREE.Mesh(mergeGeometries(list), std(col, { ...kerbTex, roughness: 1 }));
+      m.receiveShadow = true; m.castShadow = true; sc.add(m);
+    }
+    // lane marking down the middle, a little worn
+    const dashes = [];
+    for (let x = S.x0; x < S.x1; x += 8) dashes.push(new THREE.PlaneGeometry(4, 0.35).rotateX(-Math.PI / 2).translate(x, 0.012, S.centre));
+    const dm = new THREE.Mesh(mergeGeometries(dashes), std('#d9d4c4', { roughness: 0.8, transparent: true, opacity: 0.8, polygonOffset: true, polygonOffsetFactor: -3 }));
+    dm.receiveShadow = true; sc.add(dm);
     // the far side: apartment blocks with shops at street level
     const colours = ['#e9d7b9', '#d8e2cf', '#f0c9a0', '#c9d8e8', '#e8c3c3', '#f2e2a8', '#d6d0c4', '#bfd7cf', '#f3d6e4'];
     let x = S.x0;
     while (x < S.x1) {
       const bays = 2 + Math.floor(rnd() * 3); const storeys = 2 + Math.floor(rnd() * 4);
       const w = bays * 6; const hgt = storeys * 10;
-      this._building(x + w / 2, S.pathFar - 0.2, w, hgt, 16, pick(colours), storeys, bays, true, Math.PI);
+      this._building(x + w / 2, S.pathFar - 0.2, w, hgt, 16, pick(colours), storeys, bays, true, 1);
       x += w + (rnd() < 0.3 ? 2 + rnd() * 4 : 0.2);
+    }
+    // our side of the street: the neighbours either side of our building (seen on walks)
+    for (const [from, to] of [[S.x0, -8.2], [32.2, S.x1]]) {
+      let nx = from;
+      while (nx < to - 6) {
+        const bays = Math.min(2 + Math.floor(rnd() * 3), Math.floor((to - nx) / 6)); const storeys = 2 + Math.floor(rnd() * 4);
+        const w = bays * 6;
+        this._building(nx + w / 2, S.facade, w, storeys * 10, 16, pick(colours), storeys, bays, true, -1);
+        nx += w + 0.2;
+      }
     }
     // a second, taller row behind, and a distant skyline in the haze
     for (let k = 0; k < 9; k += 1) {
       const bw = 18 + rnd() * 16; const bh = 50 + rnd() * 60;
-      this._building(S.x0 + 20 + k * 24 + rnd() * 6, S.pathFar - 26, bw, bh, 18, pick(colours), Math.round(bh / 10), Math.max(2, Math.round(bw / 6)), false, Math.PI);
+      this._building(S.x0 + 20 + k * 24 + rnd() * 6, S.pathFar - 26, bw, bh, 18, pick(colours), Math.round(bh / 10), Math.max(2, Math.round(bw / 6)), false, 1);
     }
     const far = std('#9aa7b2', { roughness: 1 });
     for (let k = 0; k < 26; k += 1) {
@@ -287,42 +366,59 @@ export class Outdoor {
     sc.add(box(4, 0.2, 0.15, gate, WALK.gate.x, 3.9, -3.6));
   }
 
-  /** One apartment block. faceRot π = facing +z (toward us). */
-  _building(x, zFront, w, h, depth, colour, storeys, bays, shop, faceRot) {
+  /** One apartment block, front face at zFront. facing 1 = faces +z (across the road, toward us); −1 = faces −z (our side). */
+  _building(x, zFront, w, h, depth, colour, storeys, bays, shop, facing = 1) {
+    // built in local space (front at z = 0, facing +z), then placed and turned
+    const grp = new THREE.Group();
+    grp.position.set(x, 0, zFront); grp.rotation.y = facing > 0 ? 0 : Math.PI;
     const { map, emissive } = facadeTex(colour, storeys, bays, shop);
-    const front = new THREE.MeshStandardMaterial({ map, emissiveMap: emissive, emissive: '#ffffff', emissiveIntensity: 0, roughness: 0.92 });
+    const front = new THREE.MeshStandardMaterial({ map, emissiveMap: emissive, emissive: '#ffffff', emissiveIntensity: 0, roughness: 0.92, normalMap: relief('beige_wall_001', [w / 12, h / 12]), normalScale: new THREE.Vector2(0.8, 0.8) });
     this.nightMats.push(front);
-    const side = std(colour, { roughness: 0.95 });
+    const sideTex = plasterTex(colour).clone(); sideTex.repeat.set(depth / 14, h / 14); sideTex.needsUpdate = true;
+    const side = std('#ffffff', { map: sideTex, roughness: 0.95 });
     const mats = [side, side, std('#8f8a82'), side, front, side];
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, depth), mats);
-    b.position.set(x, h / 2, zFront - depth / 2);
+    b.position.set(0, h / 2, -depth / 2);
     b.castShadow = true; b.receiveShadow = true;
-    this.scene.add(b);
-    // balconies with railings, AC units, laundry; rooftop parapet + water tank
-    const slab = std('#d9d4ca'); const rail = std('#3a3a3a', { metalness: 0.4, roughness: 0.5 });
-    const parts = { slab: [], rail: [], ac: [], cloth: [] };
+    grp.add(b);
+    // balconies with railings, AC units, laundry; shop awnings; rooftop parapet + water tank
+    const slab = std('#d9d4ca', { map: plasterTex('#d9d4ca') }); const rail = std('#3a3a3a', { metalness: 0.5, roughness: 0.45 });
+    const parts = { slab: [], rail: [], ac: [], cloth: [], awning: [] };
     const startStorey = shop ? 1 : 0;
     for (let s = startStorey; s < storeys; s += 1) {
       const y = s * 10 + 0.4;
       for (let k = 0; k < bays; k += 1) {
-        const bx = x - w / 2 + (k + 0.5) * (w / bays);
+        const bx = -w / 2 + (k + 0.5) * (w / bays);
         if (rnd() < 0.55) {
-          parts.slab.push(new THREE.BoxGeometry(w / bays - 0.6, 0.4, 2.2).translate(bx, y, zFront + 1.1));
-          parts.rail.push(new THREE.BoxGeometry(w / bays - 0.6, 0.12, 0.12).translate(bx, y + 3.2, zFront + 2.15));
-          for (let r = -2; r <= 2; r += 1) parts.rail.push(new THREE.BoxGeometry(0.08, 3.2, 0.08).translate(bx + r * (w / bays - 0.8) / 4, y + 1.6, zFront + 2.15));
-          if (rnd() < 0.5) for (let c = 0; c < 3; c += 1) parts.cloth.push(new THREE.PlaneGeometry(1.0, 1.6).translate(bx - 1.5 + c * 1.4, y + 2.4, zFront + 1.9));
+          parts.slab.push(new THREE.BoxGeometry(w / bays - 0.6, 0.4, 2.2).translate(bx, y, 1.1));
+          parts.rail.push(new THREE.BoxGeometry(w / bays - 0.6, 0.12, 0.12).translate(bx, y + 3.2, 2.15));
+          for (let r = -6; r <= 6; r += 1) parts.rail.push(new THREE.BoxGeometry(0.06, 3.2, 0.06).translate(bx + r * (w / bays - 0.8) / 12, y + 1.6, 2.15));
+          if (rnd() < 0.5) for (let c = 0; c < 3; c += 1) parts.cloth.push(new THREE.PlaneGeometry(1.0, 1.6).translate(bx - 1.5 + c * 1.4, y + 2.4, 1.9));
         }
-        if (rnd() < 0.4) parts.ac.push(new THREE.BoxGeometry(2.6, 1.8, 1.0).translate(bx + 2, y + 6.2, zFront + 0.5));
+        // the chajja: a concrete sunshade over every window
+        parts.slab.push(new THREE.BoxGeometry(w / bays - 1.4, 0.25, 1.1).translate(bx, y + 8.4, 0.55));
+        if (rnd() < 0.4) parts.ac.push(new THREE.BoxGeometry(2.6, 1.8, 1.0).translate(bx + 2, y + 6.2, 0.5));
       }
     }
-    parts.slab.push(new THREE.BoxGeometry(w, 1.4, 0.4).translate(x, h + 0.7, zFront - 0.2)); // parapet
-    const add = (list, mat) => { if (!list.length) return; const m = new THREE.Mesh(mergeGeometries(list), mat); m.castShadow = true; m.receiveShadow = true; this.scene.add(m); };
+    if (shop) {
+      // tarpaulin awnings pulled out over the shop fronts
+      for (let k = 0; k < bays; k += 1) {
+        if (rnd() < 0.35) continue;
+        const bx = -w / 2 + (k + 0.5) * (w / bays);
+        const aw = new THREE.PlaneGeometry(w / bays - 0.8, 3.4); aw.rotateX(-Math.PI / 2 + 0.42); aw.translate(bx, 8.6, 1.6);
+        parts.awning.push(aw);
+      }
+    }
+    parts.slab.push(new THREE.BoxGeometry(w, 1.4, 0.4).translate(0, h + 0.7, -0.2)); // parapet
+    const add = (list, mat, shadow = true) => { if (!list.length) return; const m = new THREE.Mesh(mergeGeometries(list), mat); m.castShadow = shadow; m.receiveShadow = true; grp.add(m); };
     add(parts.slab, slab); add(parts.rail, rail); add(parts.ac, std('#e6e6e2', { roughness: 0.6 }));
-    if (parts.cloth.length) { const m = new THREE.Mesh(mergeGeometries(parts.cloth), new THREE.MeshStandardMaterial({ color: pick(['#c0392b', '#2471a3', '#f4d03f', '#ffffff', '#7d3c98']), side: THREE.DoubleSide, roughness: 1 })); this.scene.add(m); }
+    add(parts.cloth, new THREE.MeshStandardMaterial({ color: pick(['#c0392b', '#2471a3', '#f4d03f', '#ffffff', '#7d3c98']), side: THREE.DoubleSide, roughness: 1 }));
+    add(parts.awning, new THREE.MeshStandardMaterial({ color: pick(['#2f6db5', '#2f6db5', '#e67e22', '#2e8b57', '#c0392b']), side: THREE.DoubleSide, roughness: 0.75 }));
     // the black plastic water tank every Indian rooftop has
     const tank = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 4.4, 20), std('#1d1d1d', { roughness: 0.55 }));
-    tank.position.set(x + (rnd() - 0.5) * (w - 6), h + 2.2 + 0.6, zFront - depth / 2); tank.castShadow = true;
-    this.scene.add(tank);
+    tank.position.set((rnd() - 0.5) * (w - 6), h + 2.2 + 0.6, -depth / 2); tank.castShadow = true;
+    grp.add(tank);
+    this.scene.add(grp);
   }
 
   /** Our building's south face, with openings at the flat's windows. */
@@ -349,29 +445,54 @@ export class Outdoor {
     m.position.z = S.facade; m.receiveShadow = true; m.castShadow = true;
     this.scene.add(m);
     // cover the textured ground-floor windows with plain plaster around our real openings
-    const plain = std('#e9dcc1', { roughness: 0.95, side: THREE.DoubleSide });
+    // ShapeGeometry UVs are world units: one plaster tile per 12 units (≈ 3.6 m)
+    const pt = plasterTex('#ecdfc4').clone(); pt.repeat.set(1 / 12, 1 / 12); pt.needsUpdate = true;
+    const plain = std('#ffffff', { map: pt, roughness: 0.95, side: THREE.DoubleSide, normalMap: relief('beige_wall_001', [1 / 12, 1 / 12]) });
     const gshape = new THREE.Shape(); gshape.moveTo(x0, 0); gshape.lineTo(x1, 0); gshape.lineTo(x1, 9.8); gshape.lineTo(x0, 9.8); gshape.lineTo(x0, 0);
     for (const h of shape.holes) gshape.holes.push(h);
     const gm = new THREE.Mesh(new THREE.ShapeGeometry(gshape), plain);
     gm.position.z = S.facade - 0.02; gm.receiveShadow = true; this.scene.add(gm);
-    // window frames + grills seen from outside, and sunshades over them
-    const frame = std('#f4f1ea', { roughness: 0.6 }); const grill = std('#2b2b2b', { metalness: 0.4, roughness: 0.5 });
+    // sunshades (chajja) over the windows and painted MS grills — seen from inside too
+    const chajja = std('#ffffff', { map: plasterTex('#e3d7bf'), roughness: 0.9 }); const grill = std('#3d4347', { metalness: 0.5, roughness: 0.45 });
+    const grills = [];
     for (const [wx, wy, ww, wh] of OUR_WINDOWS) {
-      this.scene.add(box(ww + 0.5, 0.25, 0.9, frame, wx, wy + wh / 2 + 0.6, S.facade - 0.45));
-      for (let k = 1; k < 4; k += 1) this.scene.add(box(0.035, wh, 0.035, grill, wx - ww / 2 + (k * ww) / 4, wy, S.facade - 0.12));
+      const c = box(ww + 0.8, 0.22, 1.1, chajja, wx, wy + wh / 2 + 0.7, S.facade - 0.55); c.castShadow = true; c.receiveShadow = true; this.scene.add(c);
+      for (let k = 1; k < 6; k += 1) grills.push(new THREE.BoxGeometry(0.03, wh, 0.03).translate(wx - ww / 2 + (k * ww) / 6, wy, S.facade - 0.14));
+      for (const fy of [-0.3, 0.3]) grills.push(new THREE.BoxGeometry(ww, 0.03, 0.03).translate(wx, wy + fy * wh, S.facade - 0.14));
     }
-    // dark rooms behind the openings, seen from the street during walks (hidden from inside: they'd block the view)
+    const gr = new THREE.Mesh(mergeGeometries(grills), grill); gr.castShadow = true; this.scene.add(gr);
+    // seen from the street on walks only (from inside they'd block the view): aluminium frames,
+    // glass that reflects the sky, and our rooms behind it
     this.interiorBacks = new THREE.Group();
-    for (const [wx, wy, ww, wh] of OUR_WINDOWS) {
-      const back = new THREE.Mesh(new THREE.PlaneGeometry(ww + 0.4, wh + 0.4), new THREE.MeshStandardMaterial({ color: '#3a3128', roughness: 1 }));
-      back.position.set(wx, wy, S.facade + 0.28);
-      back.rotation.y = Math.PI;
-      this.interiorBacks.add(back);
-    }
+    const alu = std('#c9ccce', { metalness: 0.7, roughness: 0.35 });
+    const glass = new THREE.MeshStandardMaterial({ color: '#5d6f7a', metalness: 0.9, roughness: 0.06, transparent: true, opacity: 0.45, envMapIntensity: 1.4 });
+    const room = (warm) => canvasTex(256, 192, (g, w, h) => {
+      const gr2 = g.createLinearGradient(0, 0, 0, h); gr2.addColorStop(0, warm ? '#f3e2c4' : '#e9e4f0'); gr2.addColorStop(1, warm ? '#b49a78' : '#a59fb0');
+      g.fillStyle = gr2; g.fillRect(0, 0, w, h);
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, h * 0.78, w, h * 0.22);               // floor in shade
+      g.fillStyle = '#f4a460'; g.fillRect(0, 0, w * 0.18, h); g.fillRect(w * 0.82, 0, w * 0.18, h); // curtains
+      g.fillStyle = 'rgba(0,0,0,0.12)'; for (let i = 0; i < 6; i += 1) g.fillRect(i * w * 0.03, 0, 2, h);
+      g.fillStyle = '#8b6b4a'; g.fillRect(w * 0.42, h * 0.22, w * 0.16, h * 0.18);           // a picture
+      const lamp = g.createRadialGradient(w * 0.5, h * 0.05, 2, w * 0.5, h * 0.05, w * 0.5); lamp.addColorStop(0, 'rgba(255,240,200,0.6)'); lamp.addColorStop(1, 'rgba(255,240,200,0)');
+      g.fillStyle = lamp; g.fillRect(0, 0, w, h);
+    });
+    OUR_WINDOWS.forEach(([wx, wy, ww, wh], i) => {
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(ww + 1.2, wh + 0.8), new THREE.MeshStandardMaterial({ map: room(i !== 1), roughness: 1, emissive: '#ffd9a0', emissiveIntensity: 0 }));
+      back.position.set(wx, wy, S.facade + 0.9); back.rotation.y = Math.PI;
+      this.nightMats.push(back.material);
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(ww, wh), glass);
+      pane.position.set(wx, wy, S.facade + 0.05); pane.rotation.y = Math.PI;
+      this.interiorBacks.add(back, pane);
+      const f = 0.12;
+      for (const [fw, fh, fx, fy] of [[ww + f, f, 0, wh / 2], [ww + f, f, 0, -wh / 2], [f, wh, -ww / 2, 0], [f, wh, ww / 2, 0], [f * 0.6, wh, 0, 0]]) {
+        this.interiorBacks.add(box(fw, fh, 0.14, alu, wx + fx, wy + fy, S.facade + 0.02));
+      }
+    });
     this.interiorBacks.visible = false;
     this.scene.add(this.interiorBacks);
-    // a plinth along the base
-    this.scene.add(box(x1 - x0, 0.9, 0.4, std('#8a7f72'), (x0 + x1) / 2, 0.45, S.facade - 0.2));
+    // a plinth along the base (scanned concrete)
+    const plinth = box(x1 - x0, 0.9, 0.4, std('#9a8f80', { ...pbr('concrete', [8, 0.3]), roughness: 1 }), (x0 + x1) / 2, 0.45, S.facade - 0.2);
+    plinth.receiveShadow = true; this.scene.add(plinth);
   }
 
   async _loadModels() {
@@ -396,9 +517,22 @@ export class Outdoor {
     // trees along both footpaths, lamps on the near kerb
     if (tree) {
       for (let x = S.x0 + 10; x < S.x1; x += 18 + rnd() * 10) {
-        for (const z of [S.kerbNear + 2.0, S.kerbFar - 2.0]) {
+        for (const z of [S.kerbNear + 1.1, S.kerbFar - 2.0]) {
           if (rnd() < 0.25) continue;
+          // keep clear of the poles and lamp posts on our kerb (and of the walk camera)
+          if (z > S.kerbNear && [(x - S.x0 - 6) % 24, (x - S.x0 - 12) % 24].some((d) => d < 4 || d > 20)) continue;
+          if (z > S.kerbNear && x > -6 && x < 30) continue;     // nothing planted right in front of our windows
           const t = fit(tree, 18 + rnd() * 9, 'y', 0.5);
+          // real neem/peepal colours: grey-brown bark, deep green leaves, each tree a little different
+          const leafHue = 0.24 + rnd() * 0.06;
+          t.traverse((m) => {
+            if (!m.isMesh) return;
+            m.material = m.material.clone();
+            const hsl = {}; m.material.color.getHSL(hsl, THREE.SRGBColorSpace);
+            if (hsl.h > 0.15 && hsl.h < 0.5) m.material.color.setHSL(leafHue, 0.42, 0.25 + rnd() * 0.07, THREE.SRGBColorSpace);
+            else m.material.color.setHSL(0.07, 0.14, 0.36, THREE.SRGBColorSpace);
+            m.material.roughness = 0.9; m.material.flatShading = false;
+          });
           t.position.set(x + rnd() * 4, 0, z); t.rotation.y = rnd() * 6;
           t.userData.phase = rnd() * 6;
           this.scene.add(t); this.trees.push(t);
@@ -406,7 +540,7 @@ export class Outdoor {
       }
     }
     if (lamp) {
-      for (let x = S.x0 + 18; x < S.x1; x += 24) {
+      for (let x = S.x0 + 12; x < S.x1; x += 24) {      // x = −6, 18, 42 …: between our windows, not in front of them
         const l = fit(lamp, 24, 'y', 0.5);
         l.position.set(x, 0, S.kerbNear + 1.0); l.rotation.y = Math.PI / 2;
         this.scene.add(l);
@@ -417,7 +551,7 @@ export class Outdoor {
         this.lampHeads.push({ head, pool });
       }
       // a few real lights near the windows' view (the rest is glow)
-      this.lampLights = [-2, 22, 46].map((x) => {
+      this.lampLights = [-6, 18, 42].map((x) => {
         const s = new THREE.SpotLight('#ffc27a', 0, 34, 0.75, 0.7, 1.6);
         s.position.set(x, 22.5, S.kerbNear - 1.4); s.target.position.set(x, 0, S.kerbNear - 3);
         this.scene.add(s, s.target);
@@ -425,7 +559,18 @@ export class Outdoor {
       });
     }
     // a vendor cart parked on the far kerb, street dogs dozing on the footpaths
-    if (cart) { const c = fit(cart, 9, 'x', 0.5); c.position.set(14, 0, S.kerbFar - 3.5); c.rotation.y = 0.2; this.scene.add(c); }
+    if (cart) { const c = fit(cart, 9, 'x', 0.5); c.position.set(36, 0, S.kerbFar - 3.5); c.rotation.y = 0.2; this.scene.add(c); }
+    // two-wheelers parked nose-in along the far footpath, in front of the shops
+    if (scooter) {
+      for (let x = S.x0 + 14; x < S.x1 - 10; x += 9 + rnd() * 22) {
+        const n = 1 + Math.floor(rnd() * 3);
+        for (let k = 0; k < n; k += 1) {
+          const sc2 = fit(scooter, 5.6, 'x', 0.5);
+          sc2.position.set(x + k * 2.2, 0, S.pathFar + 3.4); sc2.rotation.y = Math.PI / 2 + (rnd() - 0.5) * 0.3;
+          this.scene.add(sc2);
+        }
+      }
+    }
     if (dog) {
       for (const [x, z, r, lieDown] of [[30, S.kerbFar - 2.5, 1.2, true], [-30, S.kerbNear + 2.2, 4, true], [60, S.kerbFar - 3.4, 2.5, false]]) {
         const d = fit(dog, 2.2, 'x', 0.5); d.position.set(x, 0, z); d.rotation.y = r;
@@ -473,6 +618,14 @@ export class Outdoor {
     this.scene.add(this.rain);
   }
 
+  /** The sun's shadow covers a square this many units across around the focus (smaller = sharper). */
+  _shadowBox(half) {
+    if (this._shadowHalf === half) return;
+    this._shadowHalf = half;
+    Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 420 });
+    this.sun.shadow.camera.updateProjectionMatrix();
+  }
+
   // ---------------------------------------------------------------- time + weather
   /** Place the sun from the real time and sunrise/sunset; set the sky, clouds, fog, lights and night lamps. */
   setTime(now, sun, weather) {
@@ -506,10 +659,11 @@ export class Outdoor {
     this.night = night;
     this.sun.position.copy(dir).multiplyScalar(200);
     this.sun.intensity = 3.2 * Math.min(1, up * 3) * (1 - cloud * 0.75);
-    this.sun.color.set(up < 0.25 ? '#ffc58a' : '#fff4e2');
+    this.sun.color.set(up < 0.12 ? '#ffb070' : up < 0.3 ? '#ffd2a0' : '#fff4e2');
+    this.sun.castShadow = this.sun.intensity > 0.08;        // sun shadows whenever there is sun
     this.moon.position.set(40, 120, -200);
     this.moon.intensity = 0.45 * night * (1 - cloud * 0.6);
-    this.hemiBase = lerp(0.2, 1.05, 1 - night) * (1 - cloud * 0.2);
+    this.hemiBase = lerp(0.2, 0.85, 1 - night) * (1 - cloud * 0.15);
     this.hemi.intensity = this.hemiBase;
     this.hemi.color.set(night > 0.5 ? '#41507a' : cloud > 0.6 ? '#c8ced6' : '#cfe3ff');
     this.stars.material.opacity = night * (1 - cloud) * 0.9;
@@ -545,6 +699,13 @@ export class Outdoor {
       const k = tr.userData.phase;
       tr.rotation.z = Math.sin(t * 1.3 + k) * 0.012 * (1 + wind * 3);
       tr.rotation.x = Math.sin(t * 0.9 + k * 1.7) * 0.008 * (1 + wind * 3);
+    }
+    // keep the sun's shadow map centred on what we look at (walks do this themselves)
+    if (!this.walking && this.sunDir) {
+      this._shadowBox(42);
+      const fx = Math.round((focus?.x ?? 10) / 4) * 4;          // snap, so shadows don't shimmer as the camera pans
+      this.sun.target.position.set(fx, 0, -20);
+      this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, 200);
     }
     this.clouds.material.map.offset.x += dt * 0.002 * (1 + wind);
     const S = STREET;
@@ -584,7 +745,7 @@ export class Outdoor {
       this._envDirty = false;
       if (this.scene.environment) this.scene.environment.dispose();
       this.scene.environment = this.pmrem.fromScene(this.skyScene, 0, 0.1, 5000).texture;
-      this.scene.environmentIntensity = 0.6;
+      this.scene.environmentIntensity = 0.5;
     }
     const far = camera.far; const near = camera.near;
     camera.far = 5000; camera.near = Math.max(near, 0.1); camera.updateProjectionMatrix();
@@ -603,7 +764,7 @@ export class Outdoor {
     root.visible = true;
     root.position.copy(WALK.gate);
     root.rotation.y = 0;
-    this.sun.castShadow = true;
+    this._shadowBox(24);
     this.interiorBacks.visible = true;
     if (this.ready) this._walkExtras();
   }
@@ -620,7 +781,6 @@ export class Outdoor {
     w.prevParent?.add(w.root);
     if (w.other) { this.scene.remove(w.other); }
     if (this.lead) this.lead.visible = false;
-    this.sun.castShadow = false;
     this.interiorBacks.visible = false;
     this.walking = null;
   }
@@ -660,7 +820,7 @@ export class Outdoor {
     root.rotation.y += (wantYaw - root.rotation.y) * Math.min(1, dt * 4);
     // your view: over the dog, down the footpath — our building on one side, trees, road and traffic on the other
     const ahead = w.dir > 0 ? 1 : -1;
-    const want = new V3(root.position.x - ahead * 5.5, 3.8, WALK.z + 1.4);
+    const want = new V3(root.position.x - ahead * 5.5, 4.0, WALK.z + 1.9);
     camera.position.lerp(want, Math.min(1, dt * 2.5));
     this._look = (this._look || new V3(root.position.x, 1, WALK.z)).lerp(new V3(root.position.x + ahead * 9, 1.1, WALK.z - 1.6), Math.min(1, dt * 2.5));
     camera.lookAt(this._look);

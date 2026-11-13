@@ -9,7 +9,7 @@ import { h } from './dom.js';
 import {
   SPECIES, BREEDS, PERSONALITIES, AGE_FILTERS, listings, breedOf, ageLabel, ageMonths, stageName, pronoun,
 } from '../species.js';
-import { MAX_PETS, needsFor } from '../state.js';
+import { MAX_PETS, needsFor, CONDITIONS } from '../state.js';
 import { thumbnail } from '../pet/factory.js';
 import { coatSwatch } from '../pet/coats.js';
 
@@ -90,7 +90,32 @@ export function openProfile(ui) {
     h('h3', { class: 'sec' }, '🐾 My pets'),
     h('p', { class: 'muted small' }, 'One pet is at home on screen at a time. The others keep living their routine — eating from their bowls, napping — so check on everyone!'),
     list,
-    h('button', { class: 'primary wide-btn', onclick: () => openStore(ui) }, g.p.firstAdoptFree ? '🏪 Visit the Pet Store — first adoption free!' : '🏪 Visit the Pet Store')), { wide: true });
+    h('button', { class: 'primary wide-btn', onclick: () => openStore(ui) }, g.p.firstAdoptFree ? '🏪 Visit the Pet Store — first adoption free!' : '🏪 Visit the Pet Store'),
+    ...memorial(g)), { wide: true });
+}
+
+/** Pets who have passed away. */
+function memorial(g) {
+  const list = g.p.memorial || [];
+  if (!list.length) return [];
+  return [
+    h('h3', { class: 'sec' }, '🌈 In loving memory'),
+    ...list.slice().reverse().map((m) => {
+      const b = BREEDS[m.breed];
+      const when = new Date(m.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      return h('div', { class: 'pet-card', style: 'opacity:.85' },
+        img(thumbnail(m.breed, m.coat, { months: 24 })),
+        h('div', { class: 'pet-info' },
+          h('b', {}, `🕯️ ${m.name || 'Unnamed'}`),
+          h('div', { class: 'small muted' }, `${b ? b.name : m.breed} · lived to ${ageLabel(m.age)}`),
+          h('div', { class: 'small muted' }, `Passed away ${when} · ${causeWords(m.cause)}`)));
+    }),
+  ];
+}
+export function causeWords(cause) {
+  if (!cause || cause === 'ageing') return 'of old age';
+  const c = CONDITIONS[cause];
+  return c ? `after ${c.name.toLowerCase()}` : 'after an illness';
 }
 
 // ---------------------------------------------------------------------------
@@ -174,10 +199,10 @@ function meet(ui, l, back) {
       meter('Grooming', Math.min(1, (b.groomRate || 1) / 1.3))),
     h('p', { class: 'small' }, h('b', {}, `Flat / hostel life: ${flat[0]}. `), flat[1]),
     h('p', { class: 'small muted' }, `Adult weight ${l.species === 'hamster' ? `${Math.round(b.kg[0] * 1000)}–${Math.round(b.kg[1] * 1000)} g` : `${b.kg[0]}–${b.kg[1]} kg`}. ${l.species === 'dog' ? 'Needs daily walks, training and company.'
-      : l.species === 'hamster' ? 'Needs a tank of at least 100 × 50 cm with deep bedding, a solid wheel (28 cm+ for a Syrian), a hide and a sand bath. Lives alone. Lifespan only 2–3 years.'
+      : l.species === 'hamster' ? 'Needs a tank of at least 100 × 50 cm with deep bedding, a solid wheel (28 cm+ for a Syrian), a hide and a sand bath. Lives alone.'
         : 'Needs a litter box, scratching post and daily play.'} ${she[0].toUpperCase() + she.slice(1)} will grow up in real time — you'll raise ${her} from ${ageLabel(l.months)}.`),
     (b.health ? h('p', { class: 'small' }, h('b', {}, '🧬 Breed health: '),
-      `median lifespan ${b.health.lifespan} years · common conditions: ${b.health.conditions.join(', ')}${b.health.brachycephalic ? ' · flat-faced: breathing problems and overheating' : ''} · health grade ${b.health.grade}. `,
+      `common conditions: ${b.health.conditions.join(', ')}${b.health.brachycephalic ? ' · flat-faced: breathing problems and overheating' : ''} · health grade ${b.health.grade}. `,
       h('a', { href: b.health.url || 'https://breedhealthscore.com', target: '_blank', rel: 'noopener' }, 'Breed Health Score')) : null),
     b.modelNote ? h('p', { class: 'small muted' }, `ℹ️ ${b.modelNote}`) : null,
     h('label', { class: 'form' }, 'Name', nameIn),

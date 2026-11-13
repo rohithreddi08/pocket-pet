@@ -1,9 +1,9 @@
 {
  "source": "USDA FoodData Central (SR Legacy)",
  "sourceUrl": "https://fdc.nal.usda.gov",
- "via": "FoodData Central SR Legacy dataset (API unavailable)",
+ "via": "FoodData Central API",
  "licence": "Public domain (CC0)",
- "fetched": "2026-11-11",
+ "fetched": "2026-11-13",
  "unit": "kcal per 100 g",
  "foods": {
   "chicken": {

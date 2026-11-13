@@ -14,10 +14,11 @@ import { Accessories } from './pet/Accessories.js';
 import { buildPet, disposePet } from './pet/factory.js';
 import { Game, FOODS, THEMES, vitality, symptomsOf, CONDITIONS, setSun } from './state.js';
 import { WORLD, onWorld, startWorld, noiseNow, fireworksTonight } from './world.js';
-import { breedOf, pronoun } from './species.js';
+import { breedOf, pronoun, ageLabel, ageMonths } from './species.js';
+import { causeWords, openStore } from './ui/store.js';
 import { Sound, Voice, audioContext } from './audio.js';
 import { UI } from './ui/ui.js';
-import { $ } from './ui/dom.js';
+import { $, h } from './ui/dom.js';
 
 const HDR_URL = '../cat/assets/studio.hdr';
 
@@ -645,6 +646,44 @@ async function boot() {
     }, 1500);
   }
 
+  // ---- when a pet passes away
+  let mourning = false;
+  function onDeath(p) {
+    if (mourning) return;
+    mourning = true;
+    stopWalk3d();
+    stopPlay(); endFocus(false);
+    sound.purr(false);
+    pet.interrupt?.(true);
+    root.visible = false;
+    const d = p.health.dead || {};
+    const n = p.name || 'Your pet';
+    const others = game.pets.filter((x) => x !== p && !x.health?.dead);
+    const acute = d.cause && d.cause !== 'ageing' && !CONDITIONS[d.cause]?.hazard;
+    const goOn = () => {
+      ui.closeSheet(true);
+      $('#sheetClose').hidden = false;
+      if (others.length) {
+        game.moveOn();
+        spawnPet().then(() => { mourning = false; setTimeout(() => pet.greet(), 800); });
+      } else {
+        openStore(ui);
+        $('#sheetClose').hidden = true;
+        const off = game.on('pet', () => { off(); mourning = false; $('#sheetClose').hidden = false; });
+      }
+    };
+    ui.openSheet(`🌈 ${n}`, h('div', { class: 'center' },
+      h('div', { class: 'big' }, '🕯️'),
+      h('p', {}, `${n} passed away ${d.cause === 'ageing' || !d.cause ? 'peacefully' : ''} ${causeWords(d.cause)}, at ${ageLabel(d.age ?? ageMonths(p))}.`),
+      acute ? h('p', { class: 'small' }, 'Pets hide illness until it is serious. Watching for the first signs and getting help early gives them the best chance — the 🩺 Health screen shows what to look out for.') : null,
+      h('p', { class: 'muted small' }, `Thank you for every meal, walk and quiet moment you gave ${n}. Grief for a pet is real grief — it’s okay to take your time. ${n} is remembered in your profile.`),
+      h('button', { class: 'primary', onclick: goOn }, others.length ? `Spend time with ${others[0].name}` : 'Find a new companion, when you’re ready')));
+    $('#sheetClose').hidden = true;
+  }
+  game.on('death', onDeath);
+  game.on('lost', (p) => ui.toast(`🌈 ${p.name || 'One of your pets'} passed away ${causeWords(p.health?.dead?.cause)}. Remembered in your profile.`, 'big'));
+  for (const p of game._lost || []) setTimeout(() => ui.toast(`🌈 While you were away, ${p.name || 'one of your pets'} passed away ${causeWords(p.health?.dead?.cause)}. Remembered in your profile.`, 'big'), 3000);
+
   // ---- walks on the real street
   let walk3d = false;
   let skyTimer = 0;
@@ -715,7 +754,7 @@ async function boot() {
         sound.boom(noise.kind);
         if (noise.kind === 'thunder') outdoor.flash();
         const comforted = Date.now() - (game.noise.comfortedAt || 0) < 5 * 60000;
-        if (!pet.outside && (!pet.act || pet.act.interruptible !== false) && Math.random() < (comforted ? 0.25 : 0.7)) {
+        if (!game.dead && !pet.outside && (!pet.act || pet.act.interruptible !== false) && Math.random() < (comforted ? 0.25 : 0.7)) {
           if (isHam()) { pet._fleeToNest?.(); }
           else if (isDog()) { pet.say?.('whine'); pet.interrupt?.(true); pet.goToRoom?.(room, () => {}); }
           else if (!pet.sleeping) { pet.interrupt?.(true); pet._startNap?.(3); }
@@ -729,7 +768,7 @@ async function boot() {
     if (pet._baseSpeed0 != null) pet.baseSpeed = pet._baseSpeed0 * vit.speed;
     pet.speedScale = vit.speed;
     sickNag -= dt;
-    if (sickNag <= 0) {
+    if (sickNag <= 0 && !game.dead) {
       sickNag = 180;
       const h = game.health;
       const worstId = Object.entries(h.conds).sort((a, b) => b[1].sev - a[1].sev)[0]?.[0];
@@ -758,7 +797,7 @@ async function boot() {
       const res = outdoor.walkUpdate(dt, ui.walk?.pending?.ev || null, pet.len, pet.headPosition(headTmp), camera);
       built.rig?.update(res.pose, 0, res.speed, dt);
     }
-    pet.update(dt);
+    if (!game.dead) pet.update(dt);
     house.update(dt, elapsed);
     house.updateTap(dt, fx);
     fx.update(dt);
